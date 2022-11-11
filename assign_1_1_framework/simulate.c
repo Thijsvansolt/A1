@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <math.h>
 
 #include "simulate.h"
 
@@ -18,7 +19,9 @@ struct all_threads {
     double *current;
     double *new;
     double c;
-    int i_max;
+    int start;
+    int end;
+    int t_max;
 };
 
 /* Add any functions you may need (like a worker) here. */
@@ -26,16 +29,39 @@ struct all_threads {
 // 1-dimensional wave equation function
 void *wave_eq(void *all_info){
     struct all_threads *all = (struct all_threads *) all_info;
-    for(int i = 0; i < all->i_max - 1; i++){
-        all->new[i] = 2 * (all->current[i] - all->old[i]) + all->c*(all->old[i - 1] - (2 * (all->current[i] - all->current[i + 1])));
+    for(int t = 1; t < all->t_max - 1; t++){
+        for(int i = all->start; i < all->end - 1; i++){
+            all->new[i] = 2 * (all->current[i] - all->old[i]) + all->c*(all->old[i - 1] - (2 * (all->current[i] - all->current[i + 1])));
+        }
+        double *temp = all->old;
+        all->old = all->current;
+        all->current = all->new;
+        all->new = temp;
     }
-//     return all->new;
-    // printf("%f\n", all->c);
-    // for (int i = 0; i < all->i_max; i++){
-    //     printf("%f\n", all->new[i]);
-    // }
-    return 0;
+    return NULL;
 }
+
+int *make_ranges(int num_threads, int i_max){
+    int *ranges = malloc(sizeof(int) * (2 * num_threads));
+    int range = i_max / num_threads;
+
+    for (int i = 0; i < num_threads; i++) {
+        if (i == 0){
+            int start = 0;
+            int end = (i + 1) * range;
+            ranges[2 * i] = start;
+            ranges[2 * i + 1] = end;
+        } else {
+            int start = i * range + 1;
+            int end = (i + 1) * range;
+            ranges[2 * i] = start;
+            ranges[2 * i + 1] = end;
+        }
+    }
+    return ranges;
+}
+
+
 
 /*
  * Executes the entire simulation.
@@ -52,14 +78,18 @@ void *wave_eq(void *all_info){
 double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
-    struct all_threads *arrays = (struct all_threads *)malloc(sizeof(struct all_threads));
-    arrays->old = old_array;
-    arrays->current = current_array;
-    arrays->new = next_array;
-    arrays->c = 0.15;
-    arrays->i_max = i_max;
+    int *ranges = make_ranges(num_threads, i_max);
 
-
+    struct all_threads *all_ranges = (struct all_threads*) malloc(num_threads * sizeof *all_ranges);
+    for (int i = 0; i < num_threads; i++) {
+        all_ranges[i].old = old_array;
+        all_ranges[i].current = current_array;
+        all_ranges[i].new = next_array;
+        all_ranges[i].c = 0.15;
+        all_ranges[i].start = ranges[2 * i];
+        all_ranges[i].end = ranges[2 * i + 1];
+        all_ranges[i].t_max = t_max;
+    }
 
     /*
      * After each timestep, you should swap the buffers around. Watch out none
@@ -70,12 +100,13 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
     thd = (pthread_t*)malloc(sizeof(pthread_t)*number);
 
     for (int i = 0; i < number; i++){
-        pthread_create(&thd[i], NULL, wave_eq, (void *)arrays);
+        pthread_create(&thd[i], NULL, wave_eq, &all_ranges[i]);
     }
     for (int i = 0; i < number; i++){
         pthread_join(thd[i], NULL);
     }
     // exit(0);
+    // printf("%f\n", arrays->c);
 
 
     /* You should return a pointer to the array with the final results. */
