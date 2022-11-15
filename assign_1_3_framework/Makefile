@@ -1,11 +1,7 @@
-PROGNAME = assign1_1
-SRCFILES = assign1_1.c file.c timer.c simulate.c
-TARNAME = assign1_1.tgz
+PROGNAME = assign_1_3
+SRCFILES = assign_1_3.c
+TARNAME = assign_1_3.tgz
 
-# i_max t_max num_threads
-RUNARGS = 1000 1500 4
-
-IMAGEVIEW = display
 CC = gcc
 
 WARNFLAGS = -Wall -Werror-implicit-function-declaration -Wshadow \
@@ -13,7 +9,6 @@ WARNFLAGS = -Wall -Werror-implicit-function-declaration -Wshadow \
 CFLAGS = -std=c99 -ggdb -O2 $(WARNFLAGS) -D_POSIX_C_SOURCE=200112
 LFLAGS = -lm -lrt -lpthread
 
-# Do some substitution to get a list of .o files from the given .c files.
 OBJFILES = $(patsubst %.c,%.o,$(SRCFILES))
 
 .PHONY: all run runlocal plot clean dist todo
@@ -27,14 +22,10 @@ $(PROGNAME): $(OBJFILES)
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 run: $(PROGNAME)
-	prun -v -np 1 $(PROGNAME) $(RUNARGS)
+	prun -v -np 1 $(PROGNAME)
 
 runlocal: $(PROGNAME)
-	./$(PROGNAME) $(RUNARGS)
-
-plot: result.txt
-	gnuplot plot.gnp
-	$(IMAGEVIEW) plot.png
+	./$(PROGNAME) 1 1000
 
 todo:
 	-@for file in *.c *.h; do \

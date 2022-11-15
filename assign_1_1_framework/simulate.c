@@ -32,8 +32,8 @@ struct all_threads {
 // 1-dimensional wave equation function
 void *wave_eq(void *all_info){
     struct all_threads *all = (struct all_threads *) all_info;
-    for(int t = 1; t < all->t_max - 1; t++){
-        for(int i = all->start; i < all->end - 1; i++){
+    for(int t = 1; t <= all->t_max - 1; t++){
+        for(int i = all->start; i <= all->end; i++){
             all->new[i] = 2 * all->current[i] - all->old[i] + all->c * (all->current[i - 1] - (2 * all->current[i] - all->current[i + 1]));
         }
         pthread_barrier_wait(&barrier);
