@@ -3,10 +3,10 @@ SRCFILES = assign1_1.c file.c timer.c simulate.c
 TARNAME = assign1_1.tgz
 
 # i_max t_max num_threads
-RUNARGS = 1000 1500 4
+RUNARGS = 1000000 1000 2
 
 IMAGEVIEW = display
-CC = gcc
+CC = gcc -g
 
 WARNFLAGS = -Wall -Werror-implicit-function-declaration -Wshadow \
 		  -Wstrict-prototypes -pedantic-errors

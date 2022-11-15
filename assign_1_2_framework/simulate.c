@@ -1,7 +1,9 @@
 /*
- * simulate.c
- *
- * Implement your (parallel) simulation here!
+ * Names: Thijs van Solt, Fedja Matti
+ * Student IDS: 13967681, 13953699
+ * BSc Computer Science UvA
+ * Description: This file contains an multi threaded wave-equation function.
+ *             It uses the openMP library to create threads.
  */
 
 #include <stdio.h>
@@ -29,14 +31,15 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
     int workload = t_max / num_threads;
-
+    // With this pragma we create the threads and distribute the workload.
     #pragma omp parallel num_threads(num_threads) reduction (+:workload)
     {
         for (int t = 0; t < t_max / num_threads; t++)
         {
             for (int i = 0; i < i_max; i++)
             {
-                next_array[i] = 2 * current_array[i] -old_array[i] + c * (current_array[i-1] - (2 * current_array[i] - current_array[i+1]));
+                next_array[i] = 2 * current_array[i] -old_array[i] + c *
+                (current_array[i-1] - (2 * current_array[i] - current_array[i+1]));
             }
 
         }

@@ -1,7 +1,9 @@
 /*
- * simulate.c
- *
- * Implement your (parallel) simulation here!
+ * Names: Thijs van Solt, Fedja Matti
+ * Student IDS: 13967681, 13953699
+ * BSc Computer Science UvA
+ * Description: This file contains an multi threaded wave-equation function.
+ *             It uses the pthread library to create threads.
  */
 
 #include <stdio.h>
@@ -15,6 +17,7 @@
 /* Add any global variables you may need. */
 pthread_barrier_t barrier;
 
+// This is the struct that contains the data for each thread and wave-equation.
 struct all_threads {
     double *old;
     double *current;
@@ -25,16 +28,18 @@ struct all_threads {
     int t_max;
 };
 
-
-
 /* Add any functions you may need (like a worker) here. */
 
-// 1-dimensional wave equation function
+// This function is the worker function for each thread.
+// It calculates the wave-equation for each thread.
+// It uses the struct all_threads to get the data.
+// It uses the pthread_barrier_t to synchronize the threads.
 void *wave_eq(void *all_info){
     struct all_threads *all = (struct all_threads *) all_info;
     for(int t = 1; t <= all->t_max - 1; t++){
-        for(int i = all->start; i <= all->end; i++){
-            all->new[i] = 2 * all->current[i] - all->old[i] + all->c * (all->current[i - 1] - (2 * all->current[i] - all->current[i + 1]));
+        for(int i = all->start; i <= all->end; i++) {
+            all->new[i] = 2 * all->current[i] - all->old[i] + all->c *
+            (all->current[i - 1] - (2 * all->current[i] - all->current[i + 1]));
         }
         pthread_barrier_wait(&barrier);
         double *temp = all->old;
@@ -42,11 +47,14 @@ void *wave_eq(void *all_info){
         all->current = all->new;
         all->new = temp;
     }
+    free(all_info);
     return NULL;
 }
 
+// This function determines the workload for each thread.
+// It returns an array with the workload for each thread.
 int *make_ranges(int num_threads, int i_max){
-    int *ranges = malloc(sizeof(int) * (2 * num_threads));
+    int *ranges = malloc(sizeof(int) *(2 * num_threads));
     int range = i_max / num_threads;
 
     for (int i = 0; i < num_threads; i++) {
@@ -67,8 +75,6 @@ int *make_ranges(int num_threads, int i_max){
 
 /*
  * Executes the entire simulation.
- *
- * Implement your code here.
  *
  * i_max: how many data points are on a single wave
  * t_max: how many iterations the simulation should run
@@ -97,15 +103,14 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         all_info->t_max = t_max;
         pthread_create(&thd[i], NULL, wave_eq, all_info);
     }
+
     for (int i = 0; i < number; i++){
         pthread_join(thd[i], NULL);
     }
 
-    /* You should return a pointer to the array with the final results. */
     free(ranges);
     free(thd);
     return current_array;
-
 }
 
 
