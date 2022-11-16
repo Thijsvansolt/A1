@@ -101,7 +101,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
-        cout << "test" <<endl;
+        cout << t << endl;
 
         // Copy result back to host
         checkCudaCall(cudaMemcpy(next_array, deviceA, i_max*sizeof(float), cudaMemcpyHostToDevice));
