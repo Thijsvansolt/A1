@@ -28,7 +28,7 @@ using namespace std;
  *
  * For example:
  *     checkCudaCall(cudaMalloc((void **) &deviceRGB, imgS * sizeof(color_t)));
- * 
+ *
  * Special case to check the result of the last kernel invocation:
  *     kernel<<<...>>>(...);
  *     checkCudaCall(cudaGetLastError());
@@ -59,40 +59,40 @@ __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, f
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    int c = 0.15;
+    void* c = 0.15;
 
-    float* deviceA = Null;
+    float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
     if (deviceA == NULL) {
         cerr << "Error allocating memory for a on the device" << endl;
-        return;
+        return 0;
     }
 
-    float* deviceB = Null;
+    float* deviceB = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceB, i_max * sizeof(float)));
     if (deviceB == NULL) {
         checkCudaCall(cudaFree(deviceA));
         cerr << "Error allocating memory for B on the device" << endl;
-        return;
+        return 0;
     }
 
-    float* deviceC = Null;
+    float* deviceC = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceC, i_max * sizeof(float)));
     if (deviceC == NULL) {
         checkCudaCall(cudaFree(deviceA));
         checkCudaCall(cudaFree(deviceB));
         cerr << "Error allocating memory for C on the device" << endl;
-        return;
+        return 0;
     }
 
-    float* const_c = Null;
+    float* const_c = NULL;
     checkCudaCall(cudaMalloc((void **) &const_c, sizeof(float)));
     if (const_c == NULL) {
         checkCudaCall(cudaFree(deviceA));
         checkCudaCall(cudaFree(deviceB));
         checkCudaCall(cudaFree(deviceC));
         cerr << "Error allocating memory for const_c on the device" << endl;
-        return;
+        return 0;
     }
 
     //CUDA timer
