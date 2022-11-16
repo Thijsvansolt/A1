@@ -45,7 +45,7 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 and i < 1000000 - 1) {
+    if (i > 0 and i < max_domain - 1) {
         next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
     double* temp = old_array;
@@ -66,27 +66,28 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
+    __constant__ long max_domain = i_max;
 
-    double* deviceA = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(double)));
-    if (deviceA == NULL) {
+    double* old = NULL;
+    checkCudaCall(cudaMalloc((void **) &old, i_max * sizeof(double)));
+    if (old == NULL) {
         cerr << "Error allocating memory for a on the device" << endl;
         return 0;
     }
 
-    double* deviceB = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceB, i_max * sizeof(double)));
-    if (deviceB == NULL) {
-        checkCudaCall(cudaFree(deviceA));
+    double* current = NULL;
+    checkCudaCall(cudaMalloc((void **) &current, i_max * sizeof(double)));
+    if (current == NULL) {
+        checkCudaCall(cudaFree(old));
         cerr << "Error allocating memory for B on the device" << endl;
         return 0;
     }
 
-    double* deviceC = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceC, i_max * sizeof(double)));
-    if (deviceC == NULL) {
-        checkCudaCall(cudaFree(deviceA));
-        checkCudaCall(cudaFree(deviceB));
+    double* next = NULL;
+    checkCudaCall(cudaMalloc((void **) &next, i_max * sizeof(double)));
+    if (next == NULL) {
+        checkCudaCall(cudaFree(old));
+        checkCudaCall(cudaFree(current));
         cerr << "Error allocating memory for C on the device" << endl;
         return 0;
     }
@@ -98,27 +99,27 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     cudaEventCreate(&stop);
     for (int t = 0; t < t_max; t++) {
         // Copy the original arrays to the GPU
-        checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(old, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(current, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(next, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
+        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(old, current, next);
         cudaEventRecord(stop, 0);
 
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
     }
     // Copy result back to host
-    checkCudaCall(cudaMemcpy(old_array, deviceA, i_max*sizeof(double), cudaMemcpyDeviceToHost));
-    checkCudaCall(cudaMemcpy(current_array, deviceB, i_max*sizeof(double), cudaMemcpyDeviceToHost));
-    checkCudaCall(cudaMemcpy(next_array, deviceC, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaCall(cudaMemcpy(old_array, old, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaCall(cudaMemcpy(current_array, current, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaCall(cudaMemcpy(next_array, next, i_max*sizeof(double), cudaMemcpyDeviceToHost));
 
     // Cleanup GPU-side data
-    checkCudaCall(cudaFree(deviceA));
-    checkCudaCall(cudaFree(deviceB));
-    checkCudaCall(cudaFree(deviceC));
+    checkCudaCall(cudaFree(old));
+    checkCudaCall(cudaFree(current));
+    checkCudaCall(cudaFree(next));
 
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, start, stop);
