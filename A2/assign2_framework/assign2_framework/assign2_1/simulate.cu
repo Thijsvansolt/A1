@@ -20,7 +20,7 @@
 
 using namespace std;
 __constant__ double c = 0.15;
-__constant__ long max_i = 1000000;
+
 
 
 /* Utility function, use to do error checking for CUDA calls
@@ -45,7 +45,7 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 and i < max_i-1) {
+    if (i > 0 and i < 1000000 - 1) {
         next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
     double* temp = old_array;
@@ -66,7 +66,6 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(double)));
@@ -105,8 +104,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        
-        wave_eq_Kernel<<<max_i/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
+        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
         cudaEventRecord(stop, 0);
 
         // Check whether the kernel invocation was successful
