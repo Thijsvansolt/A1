@@ -19,7 +19,7 @@
 #include "simulate.hh"
 
 using namespace std;
-__constant__ float c = 0.15;
+__constant__ double c = 0.15;
 
 
 /* Utility function, use to do error checking for CUDA calls
@@ -103,6 +103,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
+        cout << i_max/threadBlockSize << endl;
         wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
         cudaEventRecord(stop, 0);
 
