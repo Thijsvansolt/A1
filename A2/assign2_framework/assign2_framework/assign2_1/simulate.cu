@@ -92,6 +92,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         return 0;
     }
 
+    cout << max_i/threadBlockSize << endl;
     //CUDA timer
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -104,8 +105,8 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        cout << i_max/threadBlockSize << endl;
-        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
+        
+        wave_eq_Kernel<<<max_i/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
         cudaEventRecord(stop, 0);
 
         // Check whether the kernel invocation was successful
