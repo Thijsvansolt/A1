@@ -59,7 +59,7 @@ __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, d
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    double* c = 0.15;
+    double c = 0.15;
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
