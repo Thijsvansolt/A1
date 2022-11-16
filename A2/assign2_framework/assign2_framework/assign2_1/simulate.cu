@@ -9,8 +9,12 @@
  *
  */
 
-#include <cstdlib>
-#include <iostream>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <math.h>
+ #include <string.h>
+ #include "timer.hh"
+ #include <iostream>
 
 #include "simulate.hh"
 
@@ -37,6 +41,12 @@ static void checkCudaCall(cudaError_t result) {
 }
 
 
+__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, float* c) {
+    unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+    deviceC[i] = 2 * deviceB[i] - deviceA[i] + c *
+            (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
+}
+
 /* Function that will simulate the wave equation, parallelized using CUDA.
  *
  * i_max: how many data points are on a single wave
@@ -45,12 +55,80 @@ static void checkCudaCall(cudaError_t result) {
  * old_array: array of size i_max filled with data for t-1
  * current_array: array of size i_max filled with data for t
  * next_array: array of size i_max. You should fill this with t+1
- * 
  */
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
+    int threadBlockSize = 512;
+    int c = 0.15;
 
-    // YOUR CODE HERE
+    float* deviceA = Null;
+    checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
+    if (deviceA == NULL) {
+        cerr << "Error allocating memory for a on the device" << endl;
+        return;
+    }
+
+    float* deviceB = Null;
+    checkCudaCall(cudaMalloc((void **) &deviceB, i_max * sizeof(float)));
+    if (deviceB == NULL) {
+        checkCudaCall(cudaFree(deviceA));
+        cerr << "Error allocating memory for B on the device" << endl;
+        return;
+    }
+
+    float* deviceC = Null;
+    checkCudaCall(cudaMalloc((void **) &deviceC, i_max * sizeof(float)));
+    if (deviceC == NULL) {
+        checkCudaCall(cudaFree(deviceA));
+        checkCudaCall(cudaFree(deviceB));
+        cerr << "Error allocating memory for C on the device" << endl;
+        return;
+    }
+
+    float* const_c = Null;
+    checkCudaCall(cudaMalloc((void **) &const_c, sizeof(float)));
+    if (const_c == NULL) {
+        checkCudaCall(cudaFree(deviceA));
+        checkCudaCall(cudaFree(deviceB));
+        checkCudaCall(cudaFree(deviceC));
+        cerr << "Error allocating memory for const_c on the device" << endl;
+        return;
+    }
+
+    //CUDA timer
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    for (int t = 0; t < t_max; t++) {
+        // Copy the original arrays to the GPU
+        checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(const_c, c, sizeof(float), cudaMemcpyHostToDevice));
+
+        // Execute the wave_eq_kernel
+        cudaEventRecord(start, 0);
+        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC, const_c);
+        cudaEventRecord(stop, 0);
+
+        // Check whether the kernel invocation was successful
+        checkCudaCall(cudaGetLastError());
+
+        // Copy result back to host
+        checkCudaCall(cudaMemcpy(next_array, deviceA, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(old_array, deviceB, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(current_array, deviceC, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(c, const_c, sizeof(float), cudaMemcpyDeviceToHost));
+    }
+    // Cleanup GPU-side data
+    checkCudaCall(cudaFree(deviceA));
+    checkCudaCall(cudaFree(deviceB));
+    checkCudaCall(cudaFree(deviceC));
+    checkCudaCall(cudaFree(const_c));
+
+    float elapsedTime;
+    cudaEventElapsedTime(&elapsedTime, start, stop);
+    cout << "Kernel invocation took " << elapsedTime << " milliseconds" << endl;
 
     return current_array;
 }
