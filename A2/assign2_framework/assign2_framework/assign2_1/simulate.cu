@@ -85,8 +85,8 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         return 0;
     }
 
-    float* const_c = NULL;
-    checkCudaCall(cudaMalloc((void **) &const_c, sizeof(float)));
+    double* const_c = NULL;
+    checkCudaCall(cudaMalloc((void **) &const_c, sizeof(double)));
     if (const_c == NULL) {
         checkCudaCall(cudaFree(deviceA));
         checkCudaCall(cudaFree(deviceB));
