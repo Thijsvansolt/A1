@@ -44,7 +44,7 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 and i < i_max-1) {
+    if (i > 0 and i < max_i-1) {
         next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
     double* temp = old_array;
