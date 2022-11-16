@@ -43,8 +43,7 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, float* c) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    deviceC[i] = 2 * deviceB[i] - deviceA[i] + c *
-            (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
+    deviceC[i] = 2 * deviceB[i] - deviceA[i] + c * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
 }
 
 /* Function that will simulate the wave equation, parallelized using CUDA.
@@ -59,7 +58,7 @@ __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, f
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    void* c = 0.15;
+    float* c = 0.15;
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
