@@ -41,9 +41,9 @@ static void checkCudaCall(cudaError_t result) {
 }
 
 
-__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, double* c) {
+__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    float temp = 2 * deviceB[i] - deviceA[i] + &c * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
+    float temp = 2 * deviceB[i] - deviceA[i] + 0.15 * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
     deviceC[i] = temp;
 }
 
@@ -59,7 +59,6 @@ __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, d
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    double c = 0.15;
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
@@ -85,16 +84,6 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         return 0;
     }
 
-    double* const_c = NULL;
-    checkCudaCall(cudaMalloc((void **) &const_c, sizeof(double)));
-    if (const_c == NULL) {
-        checkCudaCall(cudaFree(deviceA));
-        checkCudaCall(cudaFree(deviceB));
-        checkCudaCall(cudaFree(deviceC));
-        cerr << "Error allocating memory for const_c on the device" << endl;
-        return 0;
-    }
-
     //CUDA timer
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -104,7 +93,6 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(const_c, c, sizeof(double), cudaMemcpyHostToDevice));
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
@@ -118,13 +106,11 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         checkCudaCall(cudaMemcpy(next_array, deviceA, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(old_array, deviceB, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(current_array, deviceC, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(c, const_c, sizeof(double), cudaMemcpyDeviceToHost));
     }
     // Cleanup GPU-side data
     checkCudaCall(cudaFree(deviceA));
     checkCudaCall(cudaFree(deviceB));
     checkCudaCall(cudaFree(deviceC));
-    checkCudaCall(cudaFree(const_c));
 
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, start, stop);
