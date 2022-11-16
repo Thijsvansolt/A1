@@ -101,12 +101,15 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
-        cout << t << endl;
+        
 
         // Copy result back to host
         checkCudaCall(cudaMemcpy(next_array, deviceA, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        cout << '1' << endl;
         checkCudaCall(cudaMemcpy(old_array, deviceB, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        cout << '2' << endl;
         checkCudaCall(cudaMemcpy(current_array, deviceC, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        cout << '3' << endl;
     }
     // Cleanup GPU-side data
     checkCudaCall(cudaFree(deviceA));
