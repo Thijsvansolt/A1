@@ -43,7 +43,7 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    int size = sizeof(deviceA)/sizeof(deviceA[0])
+    int size = sizeof(deviceA)/sizeof(deviceA[0]);
     if (i > 0 and i < size-1) {
         deviceC[i] = 2 * deviceB[i] - deviceA[i] + 0.15 * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
     }
