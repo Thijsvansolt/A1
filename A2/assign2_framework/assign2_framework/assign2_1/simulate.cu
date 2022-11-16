@@ -98,11 +98,12 @@ double *simulate(long i_max, const long t_max, const long block_size,
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
+
+    // Copy the original arrays to the GPU
+    checkCudaCall(cudaMemcpy(old, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+    checkCudaCall(cudaMemcpy(current, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+    checkCudaCall(cudaMemcpy(next, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
     for (int t = 0; t < t_max; t++) {
-        // Copy the original arrays to the GPU
-        checkCudaCall(cudaMemcpy(old, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(current, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(next, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
