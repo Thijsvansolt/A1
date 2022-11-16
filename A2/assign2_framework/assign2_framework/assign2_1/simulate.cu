@@ -60,14 +60,14 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     int threadBlockSize = 512;
 
     float* deviceA = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
+    checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(double)));
     if (deviceA == NULL) {
         cerr << "Error allocating memory for a on the device" << endl;
         return 0;
     }
 
     float* deviceB = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceB, i_max * sizeof(float)));
+    checkCudaCall(cudaMalloc((void **) &deviceB, i_max * sizeof(double)));
     if (deviceB == NULL) {
         checkCudaCall(cudaFree(deviceA));
         cerr << "Error allocating memory for B on the device" << endl;
@@ -75,7 +75,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     }
 
     float* deviceC = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceC, i_max * sizeof(float)));
+    checkCudaCall(cudaMalloc((void **) &deviceC, i_max * sizeof(double)));
     if (deviceC == NULL) {
         checkCudaCall(cudaFree(deviceA));
         checkCudaCall(cudaFree(deviceB));
@@ -89,9 +89,9 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     cudaEventCreate(&stop);
     for (int t = 0; t < t_max; t++) {
         // Copy the original arrays to the GPU
-        checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
@@ -103,11 +103,11 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         
 
         // Copy result back to host
-        checkCudaCall(cudaMemcpy(old_array, deviceA, i_max*sizeof(float), cudaMemcpyDeviceToHost));
-        checkCudaCall(cudaMemcpy(current_array, deviceB, i_max*sizeof(float), cudaMemcpyDeviceToHost));
-        checkCudaCall(cudaMemcpy(next_array, deviceC, i_max*sizeof(float), cudaMemcpyDeviceToHost));
+        checkCudaCall(cudaMemcpy(old_array, deviceA, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+        checkCudaCall(cudaMemcpy(current_array, deviceB, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+        checkCudaCall(cudaMemcpy(next_array, deviceC, i_max*sizeof(double), cudaMemcpyDeviceToHost));
 
-        float* temp = old_array;
+        double* temp = old_array;
         old_array = current_array;
         current_array = next_array;
         next_array = temp;
