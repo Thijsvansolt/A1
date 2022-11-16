@@ -96,7 +96,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC, const_c);
+        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(deviceA, deviceB, deviceC);
         cudaEventRecord(stop, 0);
 
         // Check whether the kernel invocation was successful
