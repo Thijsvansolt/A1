@@ -20,6 +20,7 @@
 
 using namespace std;
 __constant__ double c = 0.15;
+__constant__ long max_domain;
 
 
 
@@ -66,7 +67,7 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    __constant__ long max_domain = i_max;
+    max_domain = i_max;
 
     double* old = NULL;
     checkCudaCall(cudaMalloc((void **) &old, i_max * sizeof(double)));
