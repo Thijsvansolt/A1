@@ -41,12 +41,16 @@ static void checkCudaCall(cudaError_t result) {
 }
 
 
-__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC) {
+__global__ void wave_eq_Kernel(float *old_array, float *current_array, float *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    int size = sizeof(deviceA)/sizeof(deviceA[0]);
+    int size = sizeof(old_array)/sizeof(old_array[0]);
     if (i > 0 and i < size-1) {
-        deviceC[i] = 2 * deviceB[i] - deviceA[i] + 0.15 * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
+        next_array[i] = 2 * current_array[i] - old_array[i] + 0.15 * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
+    double* temp = old_array;
+    old_array = current_array;
+    current_array = next_array;
+    next_array = temp;
 }
 
 /* Function that will simulate the wave equation, parallelized using CUDA.
@@ -103,17 +107,12 @@ double *simulate(const long i_max, const long t_max, const long block_size,
 
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
-
-        // Copy result back to host
-        checkCudaCall(cudaMemcpy(old_array, deviceA, i_max*sizeof(double), cudaMemcpyDeviceToHost));
-        checkCudaCall(cudaMemcpy(current_array, deviceB, i_max*sizeof(double), cudaMemcpyDeviceToHost));
-        checkCudaCall(cudaMemcpy(next_array, deviceC, i_max*sizeof(double), cudaMemcpyDeviceToHost));
-
-        double* temp = old_array;
-        old_array = current_array;
-        current_array = next_array;
-        next_array = temp;
     }
+    // Copy result back to host
+    checkCudaCall(cudaMemcpy(old_array, deviceA, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaCall(cudaMemcpy(current_array, deviceB, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaCall(cudaMemcpy(next_array, deviceC, i_max*sizeof(double), cudaMemcpyDeviceToHost));
+
     // Cleanup GPU-side data
     checkCudaCall(cudaFree(deviceA));
     checkCudaCall(cudaFree(deviceB));
