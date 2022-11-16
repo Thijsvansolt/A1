@@ -48,10 +48,10 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
     if (i > 0 and i < 1000000 - 1) {
         next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
-    double* temp = old_array;
-    old_array = current_array;
-    current_array = next_array;
-    next_array = temp;
+    // double* temp = old_array;
+    // old_array = current_array;
+    // current_array = next_array;
+    // next_array = temp;
 }
 
 /* Function that will simulate the wave equation, parallelized using CUDA.
@@ -91,7 +91,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         return 0;
     }
 
-    cout << max_i/threadBlockSize << endl;
+    // cout << max_i/threadBlockSize << endl;
     //CUDA timer
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
