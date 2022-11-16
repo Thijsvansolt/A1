@@ -64,7 +64,7 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
  * current_array: array of size i_max filled with data for t
  * next_array: array of size i_max. You should fill this with t+1
  */
-double *simulate(const long i_max, const long t_max, const long block_size,
+double *simulate(long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
     max_domain = i_max;
