@@ -19,6 +19,7 @@
 #include "simulate.hh"
 
 using namespace std;
+__constant__ float c = 0.15;
 
 
 /* Utility function, use to do error checking for CUDA calls
@@ -41,11 +42,10 @@ static void checkCudaCall(cudaError_t result) {
 }
 
 
-__global__ void wave_eq_Kernel(float *old_array, float *current_array, float *next_array) {
+__global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    int size = sizeof(old_array)/sizeof(old_array[0]);
-    if (i > 0 and i < size-1) {
-        next_array[i] = 2 * current_array[i] - old_array[i] + 0.15 * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
+    if (i > 0 and i < i_max-1) {
+        next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
     double* temp = old_array;
     old_array = current_array;
@@ -65,6 +65,7 @@ __global__ void wave_eq_Kernel(float *old_array, float *current_array, float *ne
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
+    __constant__ long max_i = i_max;
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(double)));
