@@ -41,7 +41,7 @@ static void checkCudaCall(cudaError_t result) {
 }
 
 
-__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, float* c) {
+__global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, double* c) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
     float temp = 2 * deviceB[i] - deviceA[i] + &c * (deviceB[i - 1] - (2 * deviceB[i] - deviceB[i + 1]));
     deviceC[i] = temp;
@@ -59,7 +59,7 @@ __global__ void wave_eq_Kernel(float *deviceA, float *deviceB, float *deviceC, f
 double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
-    float* c = 0.15;
+    double* c = 0.15;
 
     float* deviceA = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceA, i_max * sizeof(float)));
@@ -104,7 +104,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         checkCudaCall(cudaMemcpy(deviceA, old_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(deviceB, current_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(deviceC, next_array, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(const_c, c, sizeof(float), cudaMemcpyHostToDevice));
+        checkCudaCall(cudaMemcpy(const_c, c, sizeof(double), cudaMemcpyHostToDevice));
 
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
@@ -118,7 +118,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         checkCudaCall(cudaMemcpy(next_array, deviceA, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(old_array, deviceB, i_max*sizeof(float), cudaMemcpyHostToDevice));
         checkCudaCall(cudaMemcpy(current_array, deviceC, i_max*sizeof(float), cudaMemcpyHostToDevice));
-        checkCudaCall(cudaMemcpy(c, const_c, sizeof(float), cudaMemcpyDeviceToHost));
+        checkCudaCall(cudaMemcpy(c, const_c, sizeof(double), cudaMemcpyDeviceToHost));
     }
     // Cleanup GPU-side data
     checkCudaCall(cudaFree(deviceA));
