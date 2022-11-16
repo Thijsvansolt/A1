@@ -88,7 +88,7 @@ void *filter(void *a)
                 new_a->output = init(size);
                 new_a->filter_value = input->data[i];
                 push(output, input->data[i]);
-                pthread_t new_filter;
+                pthread_t new_filter = (pthread_t*) malloc(sizeof(pthread_t)*1);
                 pthread_create(&new_filter, NULL, filter, (void *)new_a);
                 pthread_join(new_filter, NULL);
             }

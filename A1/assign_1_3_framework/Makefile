@@ -25,7 +25,7 @@ run: $(PROGNAME)
 	prun -v -np 1 $(PROGNAME)
 
 runlocal: $(PROGNAME)
-	./$(PROGNAME) 1 1000
+	./$(PROGNAME) 1 100000
 
 todo:
 	-@for file in *.c *.h; do \

@@ -47,6 +47,6 @@ if __name__ == '__main__':
     plt.plot(base, e2, 'm', label='10^7')
     plt.legend()
     plt.xlabel('Number of threads')
-    plt.ylabel('Speedup in %')
+    plt.ylabel('Speedup')
     plt.savefig("pthread.png")
     plt.show()
