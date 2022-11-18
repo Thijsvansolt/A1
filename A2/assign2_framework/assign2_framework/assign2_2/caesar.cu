@@ -44,18 +44,18 @@ static void checkCudaCall(cudaError_t result) {
  * written to the given out data. */
 __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (i < file_size) {
+    if (i < file_size) {
         deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-    // }
+    }
 }
 
 /* Change this kernel to properly decrypt the given data. The result should be
  * written to the given out data. */
 __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (i < file_size) {
-        deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-    // }
+    if (i < file_size) {
+        deviceDataOut[i] = (deviceDataIn[i] - key[i % length_key]) % 255;
+    }
 }
 
 /* Sequential implementation of encryption with the Shift cipher (and therefore
@@ -86,10 +86,8 @@ int DecryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
     timer sequentialTime = timer("Sequential decryption");
 
     sequentialTime.start();
-    if (key_length == 1){
-        for (int i = 0; i < n; i++) {
-            data_out[i] = (data_in[i] - key[i % key_length]) % 255;
-        }
+    for (int i = 0; i < n; i++) {
+        data_out[i] = (data_in[i] - key[i % key_length]) % 255;
     }
     sequentialTime.stop();
 
