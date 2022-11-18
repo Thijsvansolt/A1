@@ -49,10 +49,12 @@ __global__ void wave_eq_Kernel(double *old_array, double *current_array, double 
     if (i > 0 and i < max_domain - 1) {
         next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
+    __syncthreads();
     double* temp = old_array;
     old_array = current_array;
     current_array = next_array;
     next_array = temp;
+    __syncthreads();
 }
 
 /* Function that will simulate the wave equation, parallelized using CUDA.
