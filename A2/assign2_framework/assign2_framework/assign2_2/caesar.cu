@@ -28,7 +28,7 @@ __constant__ int length_key;
  *
  * For example:
  *     checkCudaCall(cudaMalloc((void **) &deviceRGB, imgS * sizeof(color_t)));
- * 
+ *
  * Special case to check the result of the last kernel invocation:
  *     kernel<<<...>>>(...);
  *     checkCudaCall(cudaGetLastError());
@@ -44,10 +44,8 @@ static void checkCudaCall(cudaError_t result) {
  * written to the given out data. */
 __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (length_key == 1){
-        if (i < file_size) {
-            deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-        }
+    if (i < file_size) {
+        deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
     }
 }
 
@@ -55,12 +53,9 @@ __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key)
  * written to the given out data. */
 __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (length_key == 1){
-        if (i < file_size) {
-            deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-        }
+    if (i < file_size) {
+        deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
     }
-
 }
 
 /* Sequential implementation of encryption with the Shift cipher (and therefore
@@ -72,10 +67,8 @@ int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) 
     timer sequentialTime = timer("Sequential encryption");
 
     sequentialTime.start();
-    if (key_length == 1){
-        for (i = 0; i < n; i++) {
-            data_out[i] = (data_in[i] + key[i % key_length]) % 255;
-        }
+    for (i = 0; i < n; i++) {
+        data_out[i] = (data_in[i] + key[i % key_length]) % 255;
     }
     sequentialTime.stop();
 
