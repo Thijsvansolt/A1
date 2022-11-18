@@ -11,12 +11,15 @@
 #include <math.h>
 #include <string.h>
 #include <iostream>
+#include<ctype.h>
 
 #include "file.hh"
 #include "timer.hh"
 
 using namespace std;
 
+__const__ int file_size;
+__const__ int length_key;
 
 /* Utility function, use to do error checking for CUDA calls
  *
@@ -39,17 +42,24 @@ static void checkCudaCall(cudaError_t result) {
 
 /* Change this kernel to properly encrypt the given data. The result should be
  * written to the given out data. */
-__global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut) {
-
-    // YOUR CODE HERE
-
+__global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* deviceKey) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (length_key == 1){
+        if (i < file_size) {
+            data_out[i] = (data_in[i] + deviceKey[i % key_length]) % 255;
+        }
+    }
 }
 
 /* Change this kernel to properly decrypt the given data. The result should be
  * written to the given out data. */
-__global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut) {
-
-    // YOUR CODE HERE
+__global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* deviceKey) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (length_key == 1){
+        if (i < file_size) {
+            data_out[i] = (data_in[i] + deviceKey[i % key_length]) % 255;
+        }
+    }
 
 }
 
@@ -57,23 +67,25 @@ __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut) {
  * also of Caesar's cipher, if key_length == 1), which you need to implement as
  * well. Then, it can be used to verify your parallel results and compute
  * speedups of your parallelized implementation. */
-int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
-{
-  int i;
-  timer sequentialTime = timer("Sequential encryption");
+int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) {
+    int i;
+    timer sequentialTime = timer("Sequential encryption");
 
-  sequentialTime.start();
-  for (i=0; i<n; i++) {
+    sequentialTime.start();
+    cout << "plain txt is " << data_in << endl;
+    if (key_length == 1){
+        for (i = 0; i < n; i++) {
+            data_out[i] = (data_in[i] + key[i % key_length]) % 255;
+        }
+    }
+}
+    cout << "encrypted txt is " << data_out << endl;
+    sequentialTime.stop();
 
-    // YOUR CODE HERE
+    cout << fixed << setprecision(6);
+    cout << "Encryption (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
 
-  }
-  sequentialTime.stop();
-
-  cout << fixed << setprecision(6);
-  cout << "Encryption (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
-
-  return 0;
+    return 0;
 }
 
 /* Sequential implementation of decryption with the Shift cipher (and therefore
@@ -82,27 +94,38 @@ int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
  * speedups of your parallelized implementation. */
 int DecryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
 {
-  int i;
-  timer sequentialTime = timer("Sequential decryption");
+    int i;
+    timer sequentialTime = timer("Sequential decryption");
 
-  sequentialTime.start();
-  for (i=0; i<n; i++) {
+    sequentialTime.start();
+    cout << "encrypted txt is " << data_in << endl;
+    if (key_length == 1){
+        for (i=0; i<n; i++) {
+            data_out[i] = (data_in[i] - key[i % key_length]) % 255;
+        }
+    }
+    cout << "plain txt is " << data_out << endl;
+    sequentialTime.stop();
 
-    // YOUR CODE HERE
+    cout << fixed << setprecision(6);
+    cout << "Decryption (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
 
-  }
-  sequentialTime.stop();
-
-  cout << fixed << setprecision(6);
-  cout << "Decryption (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
-
-  return 0;
+    return 0;
 }
 
 /* Wrapper for your encrypt kernel, i.e., does the necessary preparations and
  * calls your kernel. */
 int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key) {
     int threadBlockSize = 512;
+    checkCudaCall(cudaMemcpyToSymbol(length_key, &key_length, sizeof(int)));
+    checkCudaCall(cudaMemcpyToSymbol(file_size, &n, sizeof(int)));
+
+    int* deviceKey = NULL;
+    checkCudaCall(cudaMalloc((void **) &deviceKey, key * sizeof(int)));
+    if (deviceKey == NULL) {
+        cerr << "Error allocating device memory for key." << endl;
+        exit(EXIT_FAILURE);
+    }
 
     // allocate the vectors on the GPU
     char* deviceDataIn = NULL;
@@ -129,7 +152,7 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     // execute kernel
     kernelTime1.start();
-    encryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut);
+    encryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
     cudaDeviceSynchronize();
     kernelTime1.stop();
 
@@ -143,6 +166,7 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     checkCudaCall(cudaFree(deviceDataIn));
     checkCudaCall(cudaFree(deviceDataOut));
+    checkCudaCall(cudaFree(deviceKey));
 
     cout << fixed << setprecision(6);
     cout << "Encrypt (kernel): \t\t" << kernelTime1.getElapsed() << " seconds." << endl;
@@ -155,6 +179,15 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
  * calls your kernel. */
 int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key) {
     int threadBlockSize = 512;
+    checkCudaCall(cudaMemcpyToSymbol(length_key, &key_length, sizeof(int)));
+    checkCudaCall(cudaMemcpyToSymbol(file_size, &n, sizeof(int)));
+
+    int* deviceKey = NULL;
+    checkCudaCall(cudaMalloc((void **) &deviceKey, key * sizeof(int)));
+    if (deviceKey == NULL) {
+        cerr << "Error allocating device memory for key." << endl;
+        exit(EXIT_FAILURE);
+    }
 
     // allocate the vectors on the GPU
     char* deviceDataIn = NULL;
@@ -181,7 +214,7 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     // execute kernel
     kernelTime1.start();
-    decryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut);
+    decryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
     cudaDeviceSynchronize();
     kernelTime1.stop();
 
@@ -195,6 +228,7 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     checkCudaCall(cudaFree(deviceDataIn));
     checkCudaCall(cudaFree(deviceDataOut));
+    checkCudaCall(cudaFree(deviceKey));
 
     cout << fixed << setprecision(6);
     cout << "Decrypt (kernel): \t\t" << kernelTime1.getElapsed() << " seconds." << endl;
@@ -210,7 +244,6 @@ int main(int argc, char* argv[]) {
         cout << "Usage: " << argv[0] << " key..." << endl;
         cout << " - key: one or more values for the encryption key, separated "
                 "by spaces" << endl;
-        
         return EXIT_FAILURE;
     }
 
@@ -228,6 +261,7 @@ int main(int argc, char* argv[]) {
         cout << "File not found! Exiting ... " << endl;
         exit(0);
     }
+
 
     // Read the file in memory from the disk
     char* data_in = new char[n];
