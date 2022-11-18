@@ -46,7 +46,7 @@ __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* devi
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (length_key == 1){
         if (i < file_size) {
-            deviceDataOut[i] = (deviceDataIn[i] + deviceKey[i % key_length]) % 255;
+            deviceDataOut[i] = (deviceDataIn[i] + deviceKey[i % length_key]) % 255;
         }
     }
 }
@@ -57,7 +57,7 @@ __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* devi
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (length_key == 1){
         if (i < file_size) {
-            deviceDataOut[i] = (deviceDataIn[i] + deviceKey[i % key_length]) % 255;
+            deviceDataOut[i] = (deviceDataIn[i] + deviceKey[i % length_key]) % 255;
         }
     }
 
@@ -129,13 +129,13 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     // allocate the vectors on the GPU
     char* deviceDataIn = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceDataIn, &n * sizeof(char)));
+    checkCudaCall(cudaMalloc((void **) &deviceDataIn, n * sizeof(char)));
     if (deviceDataIn == NULL) {
         cout << "could not allocate memory!" << endl;
         return -1;
     }
     char* deviceDataOut = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceDataOut, &n * sizeof(char)));
+    checkCudaCall(cudaMalloc((void **) &deviceDataOut, n * sizeof(char)));
     if (deviceDataOut == NULL) {
         checkCudaCall(cudaFree(deviceDataIn));
         cout << "could not allocate memory!" << endl;
@@ -183,7 +183,7 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
     checkCudaCall(cudaMemcpyToSymbol(file_size, &n, sizeof(int)));
 
     int* deviceKey = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceKey, key * sizeof(int)));
+    checkCudaCall(cudaMalloc((void **) &deviceKey, &key * sizeof(int)));
     if (deviceKey == NULL) {
         cerr << "Error allocating device memory for key." << endl;
         exit(EXIT_FAILURE);
