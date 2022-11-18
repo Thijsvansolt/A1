@@ -118,7 +118,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
         }
-    }
+
     else {
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
@@ -127,7 +127,6 @@ double *simulate(const long i_max, const long t_max, const long block_size,
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
         }
-    }
     
     // Copy result back to host
     checkCudaCall(cudaMemcpy(old_array, old, i_max*sizeof(double), cudaMemcpyDeviceToHost));
