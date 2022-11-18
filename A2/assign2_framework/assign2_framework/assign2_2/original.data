@@ -91,22 +91,22 @@ void vectorAddCuda(int n, float* a, float* b, float* result) {
 }
 
 int vectorAddSeq(int n, float* a, float* b, float* result) {
-  int i; 
+  int i;
 
   NSTimer sequentialTime = NSTimer("Sequential", false, false);
-  
+
   sequentialTime.start();
   for (i=0; i<n; i++) {
 	result[i] = a[i]+b[i];
   }
   sequentialTime.stop();
-  
+
   cout << fixed << setprecision(6);
   cout << "vector-add (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
 }
 
 int fileSize() {
-  int size; 
+  int size;
 
   ifstream file ("original.data", ios::in|ios::binary|ios::ate);
   if (file.is_open())
@@ -116,9 +116,9 @@ int fileSize() {
   }
   else {
     cout << "Unable to open file";
-    size = -1; 
+    size = -1;
   }
-  return size; 
+  return size;
 }
 
 int readData(char *fileName, char *data) {
@@ -151,12 +151,12 @@ int writeData(int size, char *fileName, char *data) {
   }
   else cout << "Unable to open file";
 
-  return -1; 
+  return -1;
 }
 
-int EncryptSeq (int n, char* data_in, char* data_out) 
+int EncryptSeq (int n, char* data_in, char* data_out)
 {
-  return 0; 
+  return 0;
 }
 
 int EncryptCuda (int n, char* data_in, char* data_out) {
@@ -168,22 +168,22 @@ int main(int argc, char* argv[]) {
 
     n = fileSize();
     if (n == -1) {
-	cout << "File not found! Exiting ... " << endl; 
+	cout << "File not found! Exiting ... " << endl;
 	exit(0);
     }
 
     char* data_in = new char[n];
-    char* data_out = new char[n];    
-    readData("original.data", data_in); 
+    char* data_out = new char[n];
+    readData("original.data", data_in);
 
     cout << "Encrypting a file of " << n << " characters." << endl;
 
     EncryptSeq(n, data_in, data_out);
     writeData(n, "sequential.data", data_out);
     EncryptCuda(n, data_in, data_out);
-    writeData(n, "cuda.data", data_out);  
+    writeData(n, "cuda.data", data_out);
     delete[] data_in;
     delete[] data_out;
-    
+
     return 0;
 }
