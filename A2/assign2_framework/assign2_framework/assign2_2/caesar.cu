@@ -137,7 +137,11 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     // execute kernel
     kernelTime1.start();
-    encryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    if (n % threadBlockSize == 0) {
+        encryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    } else {
+        encryptKernel<<<(n/threadBlockSize) + 1, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    }
     cudaDeviceSynchronize();
     kernelTime1.stop();
 
@@ -201,7 +205,11 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 
     // execute kernel
     kernelTime1.start();
-    decryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    if (n % threadBlockSize == 0) {
+        decryptKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    } else {
+        decryptKernel<<<(n/threadBlockSize) + 1, threadBlockSize>>>(deviceDataIn, deviceDataOut, deviceKey);
+    }
     cudaDeviceSynchronize();
     kernelTime1.stop();
 
@@ -263,9 +271,8 @@ int main(int argc, char* argv[]) {
     writeData(n, "cuda.data", data_out);
 
     readData("cuda.data", data_in);
-    int m = fileSize("cuda.data");
 
-    cout << "Decrypting a file of " << m << "characters" << endl;
+    cout << "Decrypting a file of " << n << "characters" << endl;
     DecryptSeq(n, data_in, data_out, key_length, enc_key);
     writeData(n, "sequential_recovered.data", data_out);
     DecryptCuda(n, data_in, data_out, key_length, enc_key);
