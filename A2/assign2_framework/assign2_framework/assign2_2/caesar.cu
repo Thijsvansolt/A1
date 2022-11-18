@@ -183,7 +183,7 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
     checkCudaCall(cudaMemcpyToSymbol(file_size, &n, sizeof(int)));
 
     int* deviceKey = NULL;
-    checkCudaCall(cudaMalloc((void **) &deviceKey, &key * sizeof(int)));
+    checkCudaCall(cudaMalloc((void **) &deviceKey, key * sizeof(int)));
     if (deviceKey == NULL) {
         cerr << "Error allocating device memory for key." << endl;
         exit(EXIT_FAILURE);
