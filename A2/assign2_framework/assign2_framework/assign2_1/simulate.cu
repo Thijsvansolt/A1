@@ -21,6 +21,7 @@
 using namespace std;
 __constant__ double c = 0.15;
 __constant__ long max_domain;
+__constant__ long time_steps;
 
 
 
@@ -46,15 +47,17 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > 0 and i < max_domain - 1) {
-        next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
+    for (int t = 0; t < time_steps; t++) {
+        if (i > 0 and i < max_domain - 1) {
+            next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
+        }
+        __syncthreads();
+        double* temp = old_array;
+        old_array = current_array;
+        current_array = next_array;
+        next_array = temp;
+        __syncthreads();
     }
-    __syncthreads();
-    double* temp = old_array;
-    old_array = current_array;
-    current_array = next_array;
-    next_array = temp;
-    __syncthreads();
 }
 
 /* Function that will simulate the wave equation, parallelized using CUDA.
@@ -70,6 +73,7 @@ double *simulate(const long i_max, const long t_max, const long block_size,
                  double *old_array, double *current_array, double *next_array) {
     int threadBlockSize = 512;
     checkCudaCall(cudaMemcpyToSymbol(max_domain, &i_max, sizeof(long)));
+    checkCudaCall(cudaMemcpyToSymbol(time_steps, &t_max, sizeof(long)));
 
     double* old = NULL;
     checkCudaCall(cudaMalloc((void **) &old, i_max * sizeof(double)));
@@ -105,24 +109,23 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     checkCudaCall(cudaMemcpy(old, old_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
     checkCudaCall(cudaMemcpy(current, current_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
     checkCudaCall(cudaMemcpy(next, next_array, i_max*sizeof(double), cudaMemcpyHostToDevice));
+
     if (i_max % threadBlockSize == 0) {
-        for (int t = 0; t < t_max; t++) {
-            // Execute the wave_eq_kernel
-            cudaEventRecord(start, 0);
-            wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(old, current, next);
-            cudaEventRecord(stop, 0);
-            // Check whether the kernel invocation was successful
-            checkCudaCall(cudaGetLastError());
+        // Execute the wave_eq_kernel
+        cudaEventRecord(start, 0);
+        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(old, current, next);
+        cudaEventRecord(stop, 0);
+        // Check whether the kernel invocation was successful
+        checkCudaCall(cudaGetLastError());
         }
     }
     else {
-        for (int t = 0; t < t_max; t++) {
-            // Execute the wave_eq_kernel
-            cudaEventRecord(start, 0);
-            wave_eq_Kernel<<<(i_max/threadBlockSize) + 1, threadBlockSize>>>(old, current, next);
-            cudaEventRecord(stop, 0);
-            // Check whether the kernel invocation was successful
-            checkCudaCall(cudaGetLastError());
+        // Execute the wave_eq_kernel
+        cudaEventRecord(start, 0);
+        wave_eq_Kernel<<<(i_max/threadBlockSize) + 1, threadBlockSize>>>(old, current, next);
+        cudaEventRecord(stop, 0);
+        // Check whether the kernel invocation was successful
+        checkCudaCall(cudaGetLastError());
         }
     }
     
