@@ -18,8 +18,8 @@
 
 using namespace std;
 
-__const__ int file_size;
-__const__ int length_key;
+__constant__ int file_size;
+__constant__ int length_key;
 
 /* Utility function, use to do error checking for CUDA calls
  *
