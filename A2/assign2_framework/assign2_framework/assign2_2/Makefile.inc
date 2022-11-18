@@ -32,5 +32,5 @@ else
 endif
 
 # Arguments to run the file with (as i_max, t_max, block_size)
-RUNARGS_CAESAR = 42
+RUNARGS_CAESAR = 1
 RUNARGS_CHECKSUM = original.data both

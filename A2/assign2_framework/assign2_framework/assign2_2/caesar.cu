@@ -45,7 +45,7 @@ static void checkCudaCall(cudaError_t result) {
 __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < file_size) {
-        deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
+        deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 256;
     }
 }
 
@@ -54,7 +54,7 @@ __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key)
 __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < file_size) {
-        deviceDataOut[i] = (deviceDataIn[i] - key[i % length_key]) % 255;
+        deviceDataOut[i] = (deviceDataIn[i] - key[i % length_key]) % 256;
     }
 }
 
@@ -67,7 +67,7 @@ int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) 
 
     sequentialTime.start();
     for (int i = 0; i < n; i++) {
-        data_out[i] = (data_in[i] + key[i % key_length]) % 255;
+        data_out[i] = (data_in[i] + key[i % key_length]) % 256;
     }
     sequentialTime.stop();
 
@@ -87,7 +87,7 @@ int DecryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
 
     sequentialTime.start();
     for (int i = 0; i < n; i++) {
-        data_out[i] = (data_in[i] - key[i % key_length]) % 255;
+        data_out[i] = (data_in[i] - key[i % key_length]) % 256;
     }
     sequentialTime.stop();
 
@@ -235,6 +235,7 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 /* Entry point to the function! */
 int main(int argc, char* argv[]) {
     // Check if there are enough arguments
+    cout << "hoi" << endl;
     if (argc < 2) {
         cout << "Usage: " << argv[0] << " key..." << endl;
         cout << " - key: one or more values for the encryption key, separated "

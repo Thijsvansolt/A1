@@ -15,6 +15,7 @@
 #include "file.hh"
 
 using namespace std;
+__constant__ int size_of_file;
 
 
 /* Utility function, use to do error checking for CUDA calls
@@ -40,9 +41,10 @@ static void checkCudaCall(cudaError_t result) {
  * The result should be written to the given result-integer, which is an
  * integer and NOT an array like deviceDataIn. */
  __global__ void checksumKernel(unsigned int* result, unsigned int *deviceDataIn){
-
-    // YOUR CODE HERE
-
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < size_of_file) {
+        atomicAdd(result, deviceDataIn[i]);
+    }
 }
 
 /* Wrapper for your checksum kernel, i.e., does the necessary preparations and
@@ -52,13 +54,16 @@ unsigned int checksumSeq (int n, unsigned int* data_in) {
     timer sequentialTime = timer("Sequential checksum");
 
     sequentialTime.start();
-    for (i=0; i<n; i++) {}
+    unsigned int result = 0;
+    for (i=0; i<n; i++) {
+        result += data_in[i];
+    }
     sequentialTime.stop();
 
     cout << fixed << setprecision(6);
     cout << "Checksum (sequential): \t\t" << sequentialTime.getElapsed() << " seconds." << endl;
 
-    return 0;
+    return result;
 }
 
 /**
@@ -68,7 +73,7 @@ unsigned int checksumSeq (int n, unsigned int* data_in) {
  */
  unsigned int checksumCuda (int n, unsigned int* data_in) {
     int threadBlockSize = 512;
-
+    checkCudaCall(cudaMemcpyToSymbol(size_of_file, &n, sizeof(int)));
     // Allocate the vectors & the result int on the GPU
     unsigned int* deviceDataIn = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceDataIn, n * sizeof(unsigned int)));
@@ -79,6 +84,7 @@ unsigned int checksumSeq (int n, unsigned int* data_in) {
     unsigned int* deviceResult = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceResult, sizeof(unsigned int)));
     if (deviceResult == NULL) {
+        checkCudaCall(cudaFree(deviceDataIn));
         cout << "Could not allocate result integer on GPU." << endl;
         exit(1);
     }
@@ -92,7 +98,12 @@ unsigned int checksumSeq (int n, unsigned int* data_in) {
     memoryTime.stop();
 
     kernelTime.start();
-    checksumKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceResult, deviceDataIn);
+    if (n/threadBlockSize == 0) {
+        checksumKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceResult, deviceDataIn);
+    } else {
+        checksumKernel<<<(n/threadBlockSize) + 1, threadBlockSize>>>(deviceResult, deviceDataIn);
+    }
+
     cudaDeviceSynchronize();
     kernelTime.stop();
 
