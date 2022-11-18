@@ -20,7 +20,7 @@ using namespace std;
 
 __constant__ int file_size;
 __constant__ int length_key;
-__constant__ int use_key[10];
+__constant__ int use_key[100];
 
 /* Utility function, use to do error checking for CUDA calls
  *
@@ -73,14 +73,11 @@ int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) 
     timer sequentialTime = timer("Sequential encryption");
 
     sequentialTime.start();
-    cout << "plain txt is " << data_in << endl;
     if (key_length == 1){
         for (i = 0; i < n; i++) {
             data_out[i] = (data_in[i] + key[i % key_length]) % 255;
         }
     }
-
-    cout << "encrypted txt is " << data_out << endl;
     sequentialTime.stop();
 
     cout << fixed << setprecision(6);
@@ -99,13 +96,11 @@ int DecryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
     timer sequentialTime = timer("Sequential decryption");
 
     sequentialTime.start();
-    cout << "encrypted txt is " << data_in << endl;
     if (key_length == 1){
         for (i=0; i<n; i++) {
             data_out[i] = (data_in[i] - key[i % key_length]) % 255;
         }
     }
-    cout << "plain txt is " << data_out << endl;
     sequentialTime.stop();
 
     cout << fixed << setprecision(6);
