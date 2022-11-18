@@ -263,8 +263,9 @@ int main(int argc, char* argv[]) {
     writeData(n, "cuda.data", data_out);
 
     readData("cuda.data", data_in);
+    m = fileSize("cuda.data");
 
-    cout << "Decrypting a file of " << n << "characters" << endl;
+    cout << "Decrypting a file of " << m << "characters" << endl;
     DecryptSeq(n, data_in, data_out, key_length, enc_key);
     writeData(n, "sequential_recovered.data", data_out);
     DecryptCuda(n, data_in, data_out, key_length, enc_key);
