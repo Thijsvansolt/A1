@@ -44,18 +44,18 @@ static void checkCudaCall(cudaError_t result) {
  * written to the given out data. */
 __global__ void encryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < file_size) {
+    // if (i < file_size) {
         deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-    }
+    // }
 }
 
 /* Change this kernel to properly decrypt the given data. The result should be
  * written to the given out data. */
 __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* key) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < file_size) {
+    // if (i < file_size) {
         deviceDataOut[i] = (deviceDataIn[i] + key[i % length_key]) % 255;
-    }
+    // }
 }
 
 /* Sequential implementation of encryption with the Shift cipher (and therefore
@@ -63,11 +63,10 @@ __global__ void decryptKernel(char* deviceDataIn, char* deviceDataOut, int* key)
  * well. Then, it can be used to verify your parallel results and compute
  * speedups of your parallelized implementation. */
 int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) {
-    int i;
     timer sequentialTime = timer("Sequential encryption");
 
     sequentialTime.start();
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         data_out[i] = (data_in[i] + key[i % key_length]) % 255;
     }
     sequentialTime.stop();
@@ -84,12 +83,11 @@ int EncryptSeq (int n, char* data_in, char* data_out, int key_length, int *key) 
  * speedups of your parallelized implementation. */
 int DecryptSeq (int n, char* data_in, char* data_out, int key_length, int *key)
 {
-    int i;
     timer sequentialTime = timer("Sequential decryption");
 
     sequentialTime.start();
     if (key_length == 1){
-        for (i=0; i<n; i++) {
+        for (int i = 0; i < n; i++) {
             data_out[i] = (data_in[i] - key[i % key_length]) % 255;
         }
     }
@@ -107,7 +105,6 @@ int EncryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
     int threadBlockSize = 512;
     checkCudaCall(cudaMemcpyToSymbol(length_key, &key_length, sizeof(int)));
     checkCudaCall(cudaMemcpyToSymbol(file_size, &n, sizeof(int)));
-    // checkCudaCall(cudaMemcpyToSymbol(use_key, key, key_length * sizeof(int)));
 
     int* deviceKey = NULL;
     checkCudaCall(cudaMalloc((void **) &deviceKey, key_length * sizeof(int)));
