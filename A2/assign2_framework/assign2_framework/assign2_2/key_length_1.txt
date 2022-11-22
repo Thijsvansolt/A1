@@ -1,0 +1,86 @@
+100kb
+Encryption (sequential): 		0.001746 seconds.
+Encrypt (kernel): 		0.000119 seconds.
+Encrypt (memory): 		0.000203 seconds
+
+Decryption (sequential): 		0.001227 seconds.
+Decrypt (kernel): 		0.000070 seconds.
+Decrypt (memory): 		0.000183 seconds.
+
+checksum
+Kernel: 		0.000108 seconds.
+Memory: 		0.000200 seconds.
+CUDA checksum: 6913467
+Checksum (sequential): 		0.000047 seconds.
+Sequential checksum: 6913467
+
+500kb
+Encryption (sequential): 		0.008486 seconds.
+Encrypt (kernel): 		0.000134 seconds.
+Encrypt (memory): 		0.000799 seconds.
+
+Decryption (sequential): 		0.006281 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000067 seconds.
+Decrypt (memory): 		0.000690 seconds.
+
+checksum
+Kernel: 		0.000224 seconds.
+Memory: 		0.000999 seconds.
+CUDA checksum: 39108830
+Checksum (sequential): 		0.000296 seconds.
+Sequential checksum: 39108830
+
+1mb
+Encrypting a file of 1094678 characters.
+Encryption (sequential): 		0.018384 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000166 seconds.
+Encrypt (memory): 		0.001105 seconds.
+
+Decryption (sequential): 		0.010750 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000109 seconds.
+Decrypt (memory): 		0.000967 seconds.
+
+The entire file content is in memory.
+Kernel: 		0.000211 seconds.
+Memory: 		0.001475 seconds.
+CUDA checksum: 103789599
+Checksum (sequential): 		0.000625 seconds.
+Sequential checksum: 103789599
+
+2mb
+Encryption (sequential): 		0.031085 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000242 seconds.
+Encrypt (memory): 		0.001565 seconds.
+
+Decryption (sequential): 		0.034937 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000226 seconds.
+Decrypt (memory): 		0.003585 seconds.
+
+The entire file content is in memory.
+Kernel: 		0.000337 seconds.
+Memory: 		0.002708 seconds.
+CUDA checksum: 205532370
+Checksum (sequential): 		0.001244 seconds.
+
+10mb
+Encryption (sequential): 		0.130133 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000916 seconds.
+Encrypt (memory): 		0.006362 seconds.
+
+Decryption (sequential): 		0.136900 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000882 seconds.
+Decrypt (memory): 		0.007072 seconds.
+
+The entire file content is in memory.
+Kernel: 		0.000995 seconds.
+Memory: 		0.011673 seconds.
+CUDA checksum: 977031769
+Checksum (sequential): 		0.009390 seconds.
+Sequential checksum: 977031769

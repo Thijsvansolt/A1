@@ -47,16 +47,8 @@ static void checkCudaCall(cudaError_t result) {
 
 __global__ void wave_eq_Kernel(double *old_array, double *current_array, double *next_array) {
     unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int t = 0; t < time_steps; t++) {
-        if (i > 0 and i < max_domain - 1) {
-            next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
-        }
-        __syncthreads();
-        double* temp = old_array;
-        old_array = current_array;
-        current_array = next_array;
-        next_array = temp;
-        __syncthreads();
+    if (i > 0 and i < max_domain - 1) {
+        next_array[i] = 2 * current_array[i] - old_array[i] + c * (current_array[i - 1] - (2 * current_array[i] - current_array[i + 1]));
     }
 }
 
@@ -113,7 +105,13 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     if (i_max % threadBlockSize == 0) {
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(old, current, next);
+        for (int t = 0; t < t_max; t++) {
+            wave_eq_Kernel<<<i_max/threadBlockSize, threadBlockSize>>>(old, current, next);
+            double* temp = old;
+            old = current;
+            current = next;
+            next = temp;
+        }
         cudaEventRecord(stop, 0);
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
@@ -122,11 +120,18 @@ double *simulate(const long i_max, const long t_max, const long block_size,
     else {
         // Execute the wave_eq_kernel
         cudaEventRecord(start, 0);
-        wave_eq_Kernel<<<(i_max/threadBlockSize) + 1, threadBlockSize>>>(old, current, next);
+        for (int t = 0; t < t_max; t++) {
+            wave_eq_Kernel<<<(i_max/threadBlockSize) + 1, threadBlockSize>>>(old, current, next);
+            double* temp = old;
+            old = current;
+            current = next;
+            next = temp;
+        }
         cudaEventRecord(stop, 0);
         // Check whether the kernel invocation was successful
         checkCudaCall(cudaGetLastError());
-        }
+    }
+
     
     // Copy result back to host
     checkCudaCall(cudaMemcpy(old_array, old, i_max*sizeof(double), cudaMemcpyDeviceToHost));

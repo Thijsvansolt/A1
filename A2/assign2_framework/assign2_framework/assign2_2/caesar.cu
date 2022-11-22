@@ -235,7 +235,6 @@ int DecryptCuda (int n, char* data_in, char* data_out, int key_length, int *key)
 /* Entry point to the function! */
 int main(int argc, char* argv[]) {
     // Check if there are enough arguments
-    cout << "hoi" << endl;
     if (argc < 2) {
         cout << "Usage: " << argv[0] << " key..." << endl;
         cout << " - key: one or more values for the encryption key, separated "
@@ -252,7 +251,7 @@ int main(int argc, char* argv[]) {
 
     // Check if the original.data file exists and what it's size is
     int n;
-    n = fileSize("original.data");
+    n = fileSize("10mb.txt");
     if (n == -1) {
         cout << "File not found! Exiting ... " << endl;
         exit(0);
@@ -262,7 +261,7 @@ int main(int argc, char* argv[]) {
     // Read the file in memory from the disk
     char* data_in = new char[n];
     char* data_out = new char[n];
-    readData("original.data", data_in);
+    readData("10mb.txt", data_in);
 
     cout << "Encrypting a file of " << n << " characters." << endl;
 

@@ -1,0 +1,10 @@
+Kernel invocation took 299.838 milliseconds
+wave timer               : avg =  753 ms, total =  753 ms, count =         1
+Kernel invocation took 383.137 milliseconds
+wave timer               : avg =    1  s, total =    1  s, count =         1
+Kernel invocation took 901.538 milliseconds
+wave timer               : avg = 1.97  s, total = 1.97  s, count =         1
+Kernel invocation took 9534.75 milliseconds
+wave timer               : avg =   19  s, total =   19  s, count =         1
+Kernel invocation took 94220.4 milliseconds
+wave timer               : avg =  176  s, total =  176  s, count =         1

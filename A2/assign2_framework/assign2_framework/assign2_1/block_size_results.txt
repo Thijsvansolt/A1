@@ -1,0 +1,90 @@
+Running for 32, 1000,
+Kernel invocation took 332.149 milliseconds
+wave timer               : avg =  910 ms, total =  910 ms, count =         1
+Running for 32, 10000,
+Kernel invocation took 337.398 milliseconds
+wave timer               : avg =  829 ms, total =  829 ms, count =         1
+Running for 32, 100000,
+Kernel invocation took 898.899 milliseconds
+wave timer               : avg = 1.97  s, total = 1.97  s, count =         1
+Running for 32, 1000000,
+Kernel invocation took 9539.74 milliseconds
+wave timer               : avg =   19  s, total =   19  s, count =         1
+Running for 32, 10000000
+Kernel invocation took 93313.9 milliseconds
+wave timer               : avg =  187  s, total =  187  s, count =         1
+Running for 64, 1000,
+Kernel invocation took 337.19 milliseconds
+wave timer               : avg =  859 ms, total =  859 ms, count =         1
+Running for 64, 10000,
+Kernel invocation took 334.3 milliseconds
+wave timer               : avg =  820 ms, total =  820 ms, count =         1
+Running for 64, 100000,
+Kernel invocation took 942.044 milliseconds
+wave timer               : avg = 2.14  s, total = 2.14  s, count =         1
+Running for 64, 1000000,
+Kernel invocation took 9538.5 milliseconds
+wave timer               : avg = 18.2  s, total = 18.2  s, count =         1
+Running for 64, 10000000
+Kernel invocation took 93321.8 milliseconds
+wave timer               : avg =  181  s, total =  181  s, count =         1
+Running for 128, 1000,
+Kernel invocation took 303.134 milliseconds
+wave timer               : avg =  799 ms, total =  799 ms, count =         1
+Running for 128, 10000,
+Kernel invocation took 337.053 milliseconds
+wave timer               : avg =  835 ms, total =  835 ms, count =         1
+Running for 128, 100000,
+Kernel invocation took 901.496 milliseconds
+wave timer               : avg = 1.99  s, total = 1.99  s, count =         1
+Running for 128, 1000000,
+Kernel invocation took 9682.37 milliseconds
+wave timer               : avg = 19.5  s, total = 19.5  s, count =         1
+Running for 128, 10000000
+Kernel invocation took 94211.2 milliseconds
+wave timer               : avg =  188  s, total =  188  s, count =         1
+Running for 256, 1000,
+Kernel invocation took 348.339 milliseconds
+wave timer               : avg =  893 ms, total =  893 ms, count =         1
+Running for 256, 10000,
+Kernel invocation took 336.85 milliseconds
+wave timer               : avg =  906 ms, total =  906 ms, count =         1
+Running for 256, 100000,
+Kernel invocation took 888.333 milliseconds
+wave timer               : avg = 1.93  s, total = 1.93  s, count =         1
+Running for 256, 1000000,
+Kernel invocation took 9683.53 milliseconds
+wave timer               : avg = 18.6  s, total = 18.6  s, count =         1
+Running for 256, 10000000
+Kernel invocation took 94212.3 milliseconds
+wave timer               : avg =  179  s, total =  179  s, count =         1
+Running for 512, 1000,
+Kernel invocation took 300.501 milliseconds
+wave timer               : avg =  781 ms, total =  781 ms, count =         1
+Running for 512, 10000,
+Kernel invocation took 365.502 milliseconds
+wave timer               : avg =  967 ms, total =  967 ms, count =         1
+Running for 512, 100000,
+Kernel invocation took 904.264 milliseconds
+wave timer               : avg = 1.92  s, total = 1.92  s, count =         1
+Running for 512, 1000000,
+Kernel invocation took 9537.86 milliseconds
+wave timer               : avg = 19.2  s, total = 19.2  s, count =         1
+Running for 512, 10000000
+Kernel invocation took 93313.1 milliseconds
+wave timer               : avg =  175  s, total =  175  s, count =         1
+Running for 1024 1000,
+Kernel invocation took 303.728 milliseconds
+wave timer               : avg =  813 ms, total =  813 ms, count =         1
+Running for 1024 10000,
+Kernel invocation took 337.365 milliseconds
+wave timer               : avg =  826 ms, total =  826 ms, count =         1
+Running for 1024 100000,
+Kernel invocation took 901.612 milliseconds
+wave timer               : avg = 1.91  s, total = 1.91  s, count =         1
+Running for 1024 1000000,
+Kernel invocation took 9539.98 milliseconds
+wave timer               : avg = 18.6  s, total = 18.6  s, count =         1
+Running for 1024 10000000
+Kernel invocation took 94220.3 milliseconds
+wave timer               : avg =  188  s, total =  188  s, count =         1

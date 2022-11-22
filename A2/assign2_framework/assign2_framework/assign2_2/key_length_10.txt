@@ -1,0 +1,56 @@
+100kb
+Encryption (sequential): 		0.001563 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000131 seconds.
+Encrypt (memory): 		0.000278 seconds.
+
+Decryption (sequential): 		0.001213 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000054 seconds.
+Decrypt (memory): 		0.000246 seconds.
+
+500kb
+Encryption (sequential): 		0.007800 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000158 seconds.
+Encrypt (memory): 		0.000791 seconds.
+
+Decryption (sequential): 		0.004674 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000122 seconds.
+Decrypt (memory): 		0.000818 seconds.
+
+1mb
+Encryption (sequential): 		0.020150 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000263 seconds.
+Encrypt (memory): 		0.001295 seconds.
+
+Decryption (sequential): 		0.013574 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000203 seconds.
+Decrypt (memory): 		0.001125 seconds.
+
+2mb
+Encryption (sequential): 		0.037560 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.000419 seconds.
+Encrypt (memory): 		0.003168 seconds.
+
+Decryption (sequential): 		0.026144 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.000359 seconds.
+Decrypt (memory): 		0.003043 seconds.
+
+10mb
+Encryption (sequential): 		0.143978 seconds.
+The entire file content was written to file.
+Encrypt (kernel): 		0.001627 seconds.
+Encrypt (memory): 		0.013853 seconds.
+
+Decryption (sequential): 		0.126915 seconds.
+The entire file content was written to file.
+Decrypt (kernel): 		0.001567 seconds.
+Decrypt (memory): 		0.012404 seconds.
+
+
