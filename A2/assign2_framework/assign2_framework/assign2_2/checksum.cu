@@ -25,7 +25,7 @@ __constant__ int size_of_file;
  *
  * For example:
  *     checkCudaCall(cudaMalloc((void **) &deviceRGB, imgS * sizeof(color_t)));
- * 
+ *
  * Special case to check the result of the last kernel invocation:
  *     kernel<<<...>>>(...);
  *     checkCudaCall(cudaGetLastError());
@@ -41,9 +41,25 @@ static void checkCudaCall(cudaError_t result) {
  * The result should be written to the given result-integer, which is an
  * integer and NOT an array like deviceDataIn. */
  __global__ void checksumKernel(unsigned int* result, unsigned int *deviceDataIn){
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < size_of_file) {
-        atomicAdd(result, deviceDataIn[i]);
+    __shared__ unsigned int sdata[512];
+    ;
+    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+    if(i > size_of_file){
+        sdata[threadIdx.x] = 0;
+    }
+    else{
+        sdata[threadIdx.x] = deviceDataIn[i];
+    }
+    __syncthreads();
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+        if (threadIdx.x < s) {
+            sdata[threadIdx.x] += sdata[threadIdx.x + s];
+        }
+        __syncthreads();
+        }
+
+    if (threadIdx.x == 0) {
+        atomicAdd(result, sdata[0]);
     }
 }
 
@@ -98,7 +114,7 @@ unsigned int checksumSeq (int n, unsigned int* data_in) {
     memoryTime.stop();
 
     kernelTime.start();
-    if (n/threadBlockSize == 0) {
+    if (n % threadBlockSize == 0) {
         checksumKernel<<<n/threadBlockSize, threadBlockSize>>>(deviceResult, deviceDataIn);
     } else {
         checksumKernel<<<(n/threadBlockSize) + 1, threadBlockSize>>>(deviceResult, deviceDataIn);
