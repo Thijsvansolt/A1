@@ -1,0 +1,2001 @@
+"""
+Networks and Network Security
+Lab 5 - Distributed Sensor Network
+NAME(s):
+STUDENT ID(s):
+GROUP NAME:
+
+DESCRIPTION:
+
+"""
+import sys
+import struct
+import socket
+from random import randint, gauss
+import tkinter
+import sensor
+from tkinter import TclError
+from threading import Thread
+from gui import MainWindow
+import select
+import math
+from threading import Timer
+import random
+
+total_nodes = 0
+
+# Get random position in NxN grid.
+def random_position(n):
+    x = randint(0, n)
+    y = randint(0, n)
+    return (x, y)
+
+
+class SensorClient(Thread):
+    def __init__(self, mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                 grid_size, ping_period, window):
+        """
+        mcast_addr: udp multicast (ip, port) tuple.
+        sensor_pos: (x,y) sensor position tuple.
+        sensor_strength: initial strength of the sensor ping (radius).
+        sensor_value: initial temperature measurement of the sensor.
+        grid_size: length of the  of the grid (which is always square).
+        ping_period: time in seconds between multicast pings.
+
+        Additional parameters to this method should always have a default
+        value!
+        """
+        super().__init__()
+
+        # Save any parameters which should be accessible later:
+        # TODO It's probably a good idea to either save the parameters
+        # to this method here, or create a seperate class to hold them.
+        self.window = window
+        self.strength = sensor_strength
+
+        # Listen for this socket becoming readable in your select call
+        # to allow the main thread to wake the client from being blocked on
+        # select. You should ignore the data being written to it.
+        self.wake_socket = self.window.wake_thread
+
+        # Create the multicast listener socket.
+        self.mcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                   socket.IPPROTO_UDP)
+        # Sets the socket address as reusable so you can run multiple instances
+        # of the program on the same machine at the same time.
+        self.mcast.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Subscribe the socket to multicast messages from the given address.
+        mreq = struct.pack('4sl', socket.inet_aton(mcast_addr[0]),
+                           socket.INADDR_ANY)
+        self.mcast.setsockopt(
+            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        if sys.platform == 'win32':  # windows special case
+            mcast.bind(('localhost', mcast_addr[1]))
+        else:  # should work for everything else
+            self.mcast.bind(mcast_addr)
+
+        # Create the peer-to-peer socket.
+        self.peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                  socket.IPPROTO_UDP)
+        # Set the socket multicast TTL so it can send multicast messages.
+        self.peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 5)
+        # Bind the socket to a random port.
+        if sys.platform == 'win32':  # windows special case
+            peer.bind(('localhost', socket.INADDR_ANY))
+        else:  # should work for everything else
+            self.peer.bind(('', socket.INADDR_ANY))
+
+        self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+        self.window.writeln(f'my position is (%s, %s)' % sensor_pos)
+
+        self.sensor = sensor.Sensor(mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                                    grid_size, ping_period, self.peer, self.mcast, window)
+
+        # TODO Implement additional code that should be run only once when starting
+        # the client here:
+        self.neighbours = []
+        self.echo_id = []
+        self.echos_started = 0
+        self.num_echos = {}
+        self.parent = []
+        self.subtreesize = {}
+        self.degree = len(self.neighbours)
+        self.target = self.sensor.pos
+        self.targetlist = [self.sensor.pos]
+        self.routes = {}
+        self.all_updates = {}
+        self.dest = None
+        self.found = False
+        self.route_strength = 0
+        self.strength_nodes = {}
+
+    def run(self):
+        """
+        Implement the auto ping and listening for incoming messages here.
+        """
+        try:
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+            while not self.window.quit_event.is_set():
+                r_socket = select.select(
+                    [self.peer, self.wake_socket, self.mcast], [], [])[0]
+                for sock in r_socket:
+                    if sock == self.wake_socket:
+                        print('wake')
+                    else:
+                        mesg, sender = sock.recvfrom(100)
+                        mesg = sensor.message_decode(mesg)
+                        if not sender[1] == self.sensor.peer.getsockname()[1]:
+                            if mesg[0] == sensor.MSG_PING or mesg[0] == sensor.MSG_PONG:
+                                self.handle_ping(mesg, sender)
+                            if mesg[0] == sensor.MSG_ECHO or mesg[0] == sensor.MSG_ECHO_REPLY:
+                                self.handle_echo(mesg, sender)
+                            if mesg[0] == sensor.ROUTE or mesg[0] == sensor.ROUTE_REPLY or mesg[0] == sensor.ALL_N_SEND:
+                                self.get_topology(mesg, sender)
+        except TclError:
+            pass
+
+    def get_command(self, command):
+        if command[0] == 'properties':
+            self.prop()
+        if command[0] == 'ping':
+            ping = sensor.message_encode(
+                0, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+        if command[0] == 'list':
+            self.get_neighbors()
+        if command[0] == 'move':
+            self.move(int(command[1]), int(command[2]))
+        if command[0] == 'strength':
+            self.set_strength(int(command[1]))
+        if command[0] == 'echo':
+            self.echo_wave(sensor.OP_NOOP)
+        if command[0] == 'size':
+            self.echo_wave(sensor.OP_SIZE)
+        if command[0] == 'highest_degree':
+            self.highest_degree()
+        if command[0] == 'route_hops':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])))
+        if command[0] == 'route_strength':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])), version=1)
+
+    def prop(self):
+        mesg = '({}, {});{};{};{}:{}'.format(self.sensor.pos[0], self.sensor.pos[1], self.sensor.value, self.sensor.strength, self.sensor.peer.getsockname()[0], self.sensor.peer.getsockname()[1])
+        self.window.writeln(mesg)
+
+    def get_neighbors(self):
+        self.neighbours.sort(key=lambda n: (
+            n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+        for n in self.neighbours:
+            distance = math.sqrt(
+                (n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+            self.window.writeln('({}, {});{}'.format(n[0], n[1], distance))
+
+    def text_entered(self, line):
+        """
+        Handle new input line here.
+        Do not change the name of this method!
+        This method is called each time a command is entered in
+        the GUI.
+        """
+
+        command = line.split(' ')
+        self.get_command(command)
+
+    def send_ping(self):
+        """
+        Send a ping message to the multicast address.
+        """
+        if self.sensor.ping_period > 0:
+            self.neighbours = []
+            ping = sensor.message_encode(
+                sensor.MSG_PING, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+
+    def handle_ping(self,mesg, sender):
+        if mesg[0] == sensor.MSG_PING:
+            in_range = self.calc_distance(
+                mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                pong = sensor.message_encode(sensor.MSG_PONG, 0, self.sensor.pos, mesg[2], strength=self.sensor.strength)
+                self.peer.sendto(pong, sender)
+            else:
+                for n in self.neighbours:
+                    if n[2] == sender:
+                        self.neighbours.remove(n)
+        if mesg[0] == sensor.MSG_PONG:
+            in_range = self.calc_distance(mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                if ((mesg[2][0], mesg[2][1], sender)) not in self.neighbours:
+                    self.neighbours.append(
+                        [mesg[2][0], mesg[2][1], sender])
+
+
+    def calc_distance(self, x1, y1, x2, y2, sensor_strength):
+        distance = (math.sqrt(abs((x1 - x2)**2 + (y1 - y2)**2)))
+        if sensor_strength >= distance:
+            return True
+        else:
+            return False
+
+    def set_strength(self, new_strength):
+        if new_strength >= 0:
+            self.sensor.strength = new_strength
+            print('strength set to {}'.format(self.sensor.strength))
+
+    def move(self, new_x, new_y):
+        if isinstance(new_x, int) and isinstance(new_y, int):
+            if new_x >= 0 and new_x <= self.sensor.grid_size and new_y >= 0 and new_y <= self.sensor.grid_size:
+                self.sensor.pos = (new_x, new_y)
+                self.target = self.sensor.pos
+                self.window.clear()
+                self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+                self.window.writeln(f'my position is (%s, %s)' % self.sensor.pos)
+
+    def echo_wave(self, operator):
+        """
+        Send an echo wave to all neighbors.
+        """
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=operator)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+        self.echos_started += 1
+
+    def highest_degree(self):
+        """
+        Send an echo wave to all neighbors.
+        """
+
+        if len(self.neighbours) == 0:
+            self.window.writeln('Highest degree: {}, node {}'.format(0, self.sensor.pos))
+            # print(0)
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=sensor.OP_DEGREE)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+            #self.degree += 1
+        self.targetlist = [self.sensor.pos]
+        self.echos_started += 1
+
+    def handle_echo(self, mesg, sender):
+        if mesg[0] == sensor.MSG_ECHO:
+            self.echo_request(mesg, sender)
+            
+        elif mesg[0] == sensor.MSG_ECHO_REPLY:
+            payload = int(mesg[7])
+            wave = (mesg[1], mesg[2])
+            self.echo_reply(mesg, wave, payload)
+    
+    def echo_request(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.echo_request_new_wave(mesg, sender)
+
+        # blad, alleen een parent
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.echo_request_leaf(mesg, sender)
+
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.echo_request_general(mesg, sender)
+
+
+    def echo_request_new_wave(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.parent = sender
+        #print('parent=', self.parent)
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            #self.degree += 1
+            if address != self.parent:
+                #print('echo send further to {}'.format(address))
+                echo = sensor.message_encode(sensor.MSG_ECHO, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.num_echos[wave] += 1
+
+    def echo_request_leaf(self, mesg, sender):
+        self.parent = sender
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=1)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        #print('echo send back no neighbours to {}'.format(self.parent))
+        self.peer.sendto(echo, self.parent)
+
+    def echo_request_general(self, mesg, sender):
+        #print('echo send back to {}'.format(sender))
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=0)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=0)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        self.peer.sendto(echo, sender)
+
+    def echo_reply(self, mesg, wave, payload):
+        if wave not in self.subtreesize:
+            self.subtreesize[wave] = 0
+        if wave in self.echo_id and self.num_echos[wave] > 0:
+            self.echo_reply_general(mesg, wave, payload)
+            
+        # geval initiator
+        #print(self.num_echos[wave], self.sensor.pos)
+        if mesg[2] == self.sensor.pos and self.num_echos[wave] == 0:
+            self.echo_reply_instantiator(mesg, wave)
+
+        # alle echos ontvangen
+        elif self.num_echos[wave] == 0:
+            self.echo_reply_send_back(mesg, wave)
+            
+            
+    def echo_reply_general(self, mesg, wave, payload):
+        self.num_echos[wave] -= 1
+        if mesg[5] == sensor.OP_SIZE:
+            self.subtreesize[wave] += payload
+        if mesg[5] == sensor.OP_DEGREE and payload >= len(self.neighbours) and payload >= self.degree:
+            #print('degree', self.degree, "payload", payload)
+            self.degree = payload
+            if payload == len(self.neighbours):
+                self.targetlist.append(mesg[4])
+            else:
+                self.targetlist = [mesg[4]]
+        else:
+            self.degree = len(self.neighbours)
+            self.targetlist = [self.sensor.pos]
+        print('echo back received')
+        
+    def echo_reply_instantiator(self, mesg, wave):
+        print("target", self.targetlist, "degree", self.degree)
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if mesg[5] == sensor.OP_SIZE:
+            self.window.writeln('size={}'.format(self.subtreesize[wave] + 1))
+        elif mesg[5] == sensor.OP_DEGREE:
+            self.window.writeln('Highest degree: {}, node {}'.format(self.degree, random.choice(self.targetlist)))
+            print(self.degree)
+        self.subtreesize.pop(wave)
+        self.targetlist = [self.sensor.pos]
+        self.degree = len(self.neighbours)
+
+    def echo_reply_send_back(self, mesg, wave):
+        self.window.writeln('({}, {}); Received from all neighbours'.format(mesg[1], mesg[2]))
+        print("{}sending payload {}  w target one of {} to {}".format(self.sensor.pos, self.degree, self.targetlist, self.parent))
+        if mesg[5] == sensor.OP_SIZE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=self.subtreesize[wave] + 1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=random.choice(self.targetlist) ,payload=self.degree)
+        else:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo_back, self.parent)
+        self.degree = len(self.neighbours)
+        self.targetlist = [self.sensor.pos]
+        self.subtreesize.pop(wave)
+
+    def route_hops(self, target, version=0):
+        self.route_strength = version
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        self.all_updates[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.ROUTE, self.echos_started, self.sensor.pos, self.sensor.pos, target=target, operation=sensor.SEND_STRENGTH)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.all_updates[(self.echos_started, self.sensor.pos)] += 1
+        if self.route_strength == 1:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        self.echos_started += 1
+        self.dest = target
+
+    def check_reachable(self):
+        check = []
+        for key in self.routes:
+            if self.dest not in self.routes[key]:
+                check.append(False)
+            else:
+                check.append(True)
+        if not any(check):
+            self.window.writeln('There is no path from {} to {}'.format(self.sensor.pos, self.dest))
+            return False
+        return True
+
+    def topology_all_send_init(self, mesg):
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if self.check_reachable():
+            paths = self.find_paths(self.sensor.pos, self.dest, self.routes)
+            if self.route_strength == 1:
+                lowest_paths_idx, lowest_strength = self.paths_with_lowest_strength(paths)
+                print(lowest_paths_idx, lowest_strength)
+                shortest_path = min(lowest_paths_idx, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops, lowest strength: {}'.format(len(shortest_path) - 2, lowest_strength))
+                self.found = True
+            else:
+                shortest_path = min(paths, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops'.format(len(shortest_path) - 2))
+                self.found = True
+            self.routes = {}
+            
+    def topology_all_send_no_init(self, mesg):
+        self.window.writeln('({}, {}); Recieved from all neighbours'.format(mesg[1], mesg[2]))
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], node, target=(n[0], n[1]), strength=self.strength_nodes[node], operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+                else:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+
+    def topology_all_send(self, mesg):
+        self.all_updates[(mesg[1], mesg[2])] -= 1
+        if mesg[2] == self.sensor.pos and self.all_updates[(mesg[1], mesg[2])] == 0 and self.found == False:
+            self.topology_all_send_init(mesg)
+        elif self.all_updates[(mesg[1], mesg[2])] == 0:
+            self.topology_all_send_no_init(mesg)
+
+    def topology_route_mult_n(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.all_updates[(mesg[1], mesg[2])] = 0
+        self.parent = sender
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            if address != self.parent:
+                echo = sensor.message_encode(sensor.ROUTE, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.all_updates[(mesg[1], mesg[2])] += 1
+
+    def topology_route_only_p(self, mesg, sender):
+        self.parent = sender
+        self.routes[self.sensor.pos] = mesg[3]
+        self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        if mesg[5] == sensor.SEND_STRENGTH:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]), operation= mesg[5], strength=self.sensor.strength)
+            self.peer.sendto(echo, self.parent)
+        else:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]))
+            self.peer.sendto(echo, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+    def topology_route_already_seen(self, mesg, sender):
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5], strength=self.sensor.strength)
+                    self.peer.sendto(echo, sender)
+                else:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]))
+                    self.peer.sendto(echo, sender)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, sender)
+        self.routes = {}
+
+
+    def topology_route(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.topology_route_mult_n(mesg, sender)
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.topology_route_only_p(mesg, sender)
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.topology_route_already_seen(mesg, sender)
+
+    def get_topology(self, mesg, sender):
+        if mesg[0] == sensor.ALL_N_SEND:
+            self.topology_all_send(mesg)
+        if mesg[0] == sensor.ROUTE:
+            self.topology_route(mesg, sender)
+        if mesg[0] == sensor.ROUTE_REPLY:
+            wave = (mesg[1], mesg[2])
+            if wave in self.echo_id:
+                if mesg[5] == sensor.SEND_STRENGTH and mesg[6] != 0:
+                    self.strength_nodes[mesg[3]] = mesg[6]
+                if mesg[3] in self.routes.keys():
+                    if mesg[4] not in self.routes[mesg[3]]:
+                            update = self.routes[mesg[3]] + [mesg[4]]
+                            self.routes[mesg[3]] = update
+                else:
+                    self.routes[mesg[3]] = [mesg[4]]
+
+    def find_paths(self, begin, target, network, path=[]):
+        path = path + [begin]
+        if begin == target:
+            return [path]
+        if begin not in network:
+            return []
+        paths = []
+        for node in network[begin]:
+            if node not in path:
+                newpaths = self.find_paths(node, target, network, path)
+                for newpath in newpaths:
+                    paths.append(newpath)
+        return paths
+
+    def paths_with_lowest_strength(self, paths):
+        lowest_strengths_from_paths = []
+        for path in paths:
+            lowest_strength_path = -1
+            for n in path:
+                if lowest_strength_path == -1:
+                    lowest_strength_path = self.strength_nodes[n]
+                elif self.strength_nodes[n] < lowest_strength_path:
+                    lowest_strength_path = self.strength_nodes[n]
+            lowest_strengths_from_paths.append(lowest_strength_path)
+        lowest_paths_idx = []
+        for value in lowest_strengths_from_paths:
+            if value == max(lowest_strengths_from_paths):
+                lowest_paths_idx.append(lowest_strengths_from_paths.index(value))
+        lowest_paths = []
+        for idx in lowest_paths_idx:
+            lowest_paths.append(paths[idx])
+        return lowest_paths, max(lowest_strengths_from_paths)
+# Program entry point.
+# You may add additional commandline arguments, but your program
+# should be able to run without specifying them
+if __name__ == '__main__':
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('--group', help='multicast group', default='224.1.1.1',
+                   type=str)
+    p.add_argument('--port', help='multicast port', default=50000, type=int)
+    p.add_argument('--pos', help='x,y sensor position', type=str)
+    p.add_argument('--strength', help='sensor strength', default=50,
+                   type=int)
+    p.add_argument(
+        '--value', help='sensor measurement value (unused this year)', type=float)
+    p.add_argument('--grid', help='size of grid', default=100, type=int)
+    p.add_argument('--period', help='period between autopings (0=off)',
+                   default=10, type=int)
+    args = p.parse_args(sys.argv[1:])
+    if args.pos:
+        pos = tuple(int(n) for n in args.pos.split(',')[:2])
+    else:
+        pos = random_position(args.grid)
+    value = args.value if args.value is not None else gauss(20, 2)
+    mcast_addr = (args.group, args.port)
+
+    w = MainWindow()
+    sensor_client = SensorClient(
+        mcast_addr, pos, args.strength, value, args.grid, args.period, w)
+    w.set_client(sensor_client)
+    sensor_client.start()
+    w.start()
+"""
+Networks and Network Security
+Lab 5 - Distributed Sensor Network
+NAME(s):
+STUDENT ID(s):
+GROUP NAME:
+
+DESCRIPTION:
+
+"""
+import sys
+import struct
+import socket
+from random import randint, gauss
+import tkinter
+import sensor
+from tkinter import TclError
+from threading import Thread
+from gui import MainWindow
+import select
+import math
+from threading import Timer
+import random
+
+total_nodes = 0
+
+# Get random position in NxN grid.
+def random_position(n):
+    x = randint(0, n)
+    y = randint(0, n)
+    return (x, y)
+
+
+class SensorClient(Thread):
+    def __init__(self, mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                 grid_size, ping_period, window):
+        """
+        mcast_addr: udp multicast (ip, port) tuple.
+        sensor_pos: (x,y) sensor position tuple.
+        sensor_strength: initial strength of the sensor ping (radius).
+        sensor_value: initial temperature measurement of the sensor.
+        grid_size: length of the  of the grid (which is always square).
+        ping_period: time in seconds between multicast pings.
+
+        Additional parameters to this method should always have a default
+        value!
+        """
+        super().__init__()
+
+        # Save any parameters which should be accessible later:
+        # TODO It's probably a good idea to either save the parameters
+        # to this method here, or create a seperate class to hold them.
+        self.window = window
+        self.strength = sensor_strength
+
+        # Listen for this socket becoming readable in your select call
+        # to allow the main thread to wake the client from being blocked on
+        # select. You should ignore the data being written to it.
+        self.wake_socket = self.window.wake_thread
+
+        # Create the multicast listener socket.
+        self.mcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                   socket.IPPROTO_UDP)
+        # Sets the socket address as reusable so you can run multiple instances
+        # of the program on the same machine at the same time.
+        self.mcast.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Subscribe the socket to multicast messages from the given address.
+        mreq = struct.pack('4sl', socket.inet_aton(mcast_addr[0]),
+                           socket.INADDR_ANY)
+        self.mcast.setsockopt(
+            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        if sys.platform == 'win32':  # windows special case
+            mcast.bind(('localhost', mcast_addr[1]))
+        else:  # should work for everything else
+            self.mcast.bind(mcast_addr)
+
+        # Create the peer-to-peer socket.
+        self.peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                  socket.IPPROTO_UDP)
+        # Set the socket multicast TTL so it can send multicast messages.
+        self.peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 5)
+        # Bind the socket to a random port.
+        if sys.platform == 'win32':  # windows special case
+            peer.bind(('localhost', socket.INADDR_ANY))
+        else:  # should work for everything else
+            self.peer.bind(('', socket.INADDR_ANY))
+
+        self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+        self.window.writeln(f'my position is (%s, %s)' % sensor_pos)
+
+        self.sensor = sensor.Sensor(mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                                    grid_size, ping_period, self.peer, self.mcast, window)
+
+        # TODO Implement additional code that should be run only once when starting
+        # the client here:
+        self.neighbours = []
+        self.echo_id = []
+        self.echos_started = 0
+        self.num_echos = {}
+        self.parent = []
+        self.subtreesize = {}
+        self.degree = len(self.neighbours)
+        self.target = self.sensor.pos
+        self.targetlist = [self.sensor.pos]
+        self.routes = {}
+        self.all_updates = {}
+        self.dest = None
+        self.found = False
+        self.route_strength = 0
+        self.strength_nodes = {}
+
+    def run(self):
+        """
+        Implement the auto ping and listening for incoming messages here.
+        """
+        try:
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+            while not self.window.quit_event.is_set():
+                r_socket = select.select(
+                    [self.peer, self.wake_socket, self.mcast], [], [])[0]
+                for sock in r_socket:
+                    if sock == self.wake_socket:
+                        print('wake')
+                    else:
+                        mesg, sender = sock.recvfrom(100)
+                        mesg = sensor.message_decode(mesg)
+                        if not sender[1] == self.sensor.peer.getsockname()[1]:
+                            if mesg[0] == sensor.MSG_PING or mesg[0] == sensor.MSG_PONG:
+                                self.handle_ping(mesg, sender)
+                            if mesg[0] == sensor.MSG_ECHO or mesg[0] == sensor.MSG_ECHO_REPLY:
+                                self.handle_echo(mesg, sender)
+                            if mesg[0] == sensor.ROUTE or mesg[0] == sensor.ROUTE_REPLY or mesg[0] == sensor.ALL_N_SEND:
+                                self.get_topology(mesg, sender)
+        except TclError:
+            pass
+
+    def get_command(self, command):
+        if command[0] == 'properties':
+            self.prop()
+        if command[0] == 'ping':
+            ping = sensor.message_encode(
+                0, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+        if command[0] == 'list':
+            self.get_neighbors()
+        if command[0] == 'move':
+            self.move(int(command[1]), int(command[2]))
+        if command[0] == 'strength':
+            self.set_strength(int(command[1]))
+        if command[0] == 'echo':
+            self.echo_wave(sensor.OP_NOOP)
+        if command[0] == 'size':
+            self.echo_wave(sensor.OP_SIZE)
+        if command[0] == 'highest_degree':
+            self.highest_degree()
+        if command[0] == 'route_hops':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])))
+        if command[0] == 'route_strength':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])), version=1)
+
+    def prop(self):
+        mesg = '({}, {});{};{};{}:{}'.format(self.sensor.pos[0], self.sensor.pos[1], self.sensor.value, self.sensor.strength, self.sensor.peer.getsockname()[0], self.sensor.peer.getsockname()[1])
+        self.window.writeln(mesg)
+
+    def get_neighbors(self):
+        self.neighbours.sort(key=lambda n: (
+            n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+        for n in self.neighbours:
+            distance = math.sqrt(
+                (n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+            self.window.writeln('({}, {});{}'.format(n[0], n[1], distance))
+
+    def text_entered(self, line):
+        """
+        Handle new input line here.
+        Do not change the name of this method!
+        This method is called each time a command is entered in
+        the GUI.
+        """
+
+        command = line.split(' ')
+        self.get_command(command)
+
+    def send_ping(self):
+        """
+        Send a ping message to the multicast address.
+        """
+        if self.sensor.ping_period > 0:
+            self.neighbours = []
+            ping = sensor.message_encode(
+                sensor.MSG_PING, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+
+    def handle_ping(self,mesg, sender):
+        if mesg[0] == sensor.MSG_PING:
+            in_range = self.calc_distance(
+                mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                pong = sensor.message_encode(sensor.MSG_PONG, 0, self.sensor.pos, mesg[2], strength=self.sensor.strength)
+                self.peer.sendto(pong, sender)
+            else:
+                for n in self.neighbours:
+                    if n[2] == sender:
+                        self.neighbours.remove(n)
+        if mesg[0] == sensor.MSG_PONG:
+            in_range = self.calc_distance(mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                if ((mesg[2][0], mesg[2][1], sender)) not in self.neighbours:
+                    self.neighbours.append(
+                        [mesg[2][0], mesg[2][1], sender])
+
+
+    def calc_distance(self, x1, y1, x2, y2, sensor_strength):
+        distance = (math.sqrt(abs((x1 - x2)**2 + (y1 - y2)**2)))
+        if sensor_strength >= distance:
+            return True
+        else:
+            return False
+
+    def set_strength(self, new_strength):
+        if new_strength >= 0:
+            self.sensor.strength = new_strength
+            print('strength set to {}'.format(self.sensor.strength))
+
+    def move(self, new_x, new_y):
+        if isinstance(new_x, int) and isinstance(new_y, int):
+            if new_x >= 0 and new_x <= self.sensor.grid_size and new_y >= 0 and new_y <= self.sensor.grid_size:
+                self.sensor.pos = (new_x, new_y)
+                self.target = self.sensor.pos
+                self.window.clear()
+                self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+                self.window.writeln(f'my position is (%s, %s)' % self.sensor.pos)
+
+    def echo_wave(self, operator):
+        """
+        Send an echo wave to all neighbors.
+        """
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=operator)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+        self.echos_started += 1
+
+    def highest_degree(self):
+        """
+        Send an echo wave to all neighbors.
+        """
+
+        if len(self.neighbours) == 0:
+            self.window.writeln('Highest degree: {}, node {}'.format(0, self.sensor.pos))
+            # print(0)
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=sensor.OP_DEGREE)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+            #self.degree += 1
+        self.targetlist = [self.sensor.pos]
+        self.echos_started += 1
+
+    def handle_echo(self, mesg, sender):
+        if mesg[0] == sensor.MSG_ECHO:
+            self.echo_request(mesg, sender)
+            
+        elif mesg[0] == sensor.MSG_ECHO_REPLY:
+            payload = int(mesg[7])
+            wave = (mesg[1], mesg[2])
+            self.echo_reply(mesg, wave, payload)
+    
+    def echo_request(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.echo_request_new_wave(mesg, sender)
+
+        # blad, alleen een parent
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.echo_request_leaf(mesg, sender)
+
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.echo_request_general(mesg, sender)
+
+
+    def echo_request_new_wave(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.parent = sender
+        #print('parent=', self.parent)
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            #self.degree += 1
+            if address != self.parent:
+                #print('echo send further to {}'.format(address))
+                echo = sensor.message_encode(sensor.MSG_ECHO, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.num_echos[wave] += 1
+
+    def echo_request_leaf(self, mesg, sender):
+        self.parent = sender
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=1)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        #print('echo send back no neighbours to {}'.format(self.parent))
+        self.peer.sendto(echo, self.parent)
+
+    def echo_request_general(self, mesg, sender):
+        #print('echo send back to {}'.format(sender))
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=0)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=0)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        self.peer.sendto(echo, sender)
+
+    def echo_reply(self, mesg, wave, payload):
+        if wave not in self.subtreesize:
+            self.subtreesize[wave] = 0
+        if wave in self.echo_id and self.num_echos[wave] > 0:
+            self.echo_reply_general(mesg, wave, payload)
+            
+        # geval initiator
+        #print(self.num_echos[wave], self.sensor.pos)
+        if mesg[2] == self.sensor.pos and self.num_echos[wave] == 0:
+            self.echo_reply_instantiator(mesg, wave)
+
+        # alle echos ontvangen
+        elif self.num_echos[wave] == 0:
+            self.echo_reply_send_back(mesg, wave)
+            
+            
+    def echo_reply_general(self, mesg, wave, payload):
+        self.num_echos[wave] -= 1
+        if mesg[5] == sensor.OP_SIZE:
+            self.subtreesize[wave] += payload
+        if mesg[5] == sensor.OP_DEGREE and payload >= len(self.neighbours) and payload >= self.degree:
+            #print('degree', self.degree, "payload", payload)
+            self.degree = payload
+            if payload == len(self.neighbours):
+                self.targetlist.append(mesg[4])
+            else:
+                self.targetlist = [mesg[4]]
+        else:
+            self.degree = len(self.neighbours)
+            self.targetlist = [self.sensor.pos]
+        print('echo back received')
+        
+    def echo_reply_instantiator(self, mesg, wave):
+        print("target", self.targetlist, "degree", self.degree)
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if mesg[5] == sensor.OP_SIZE:
+            self.window.writeln('size={}'.format(self.subtreesize[wave] + 1))
+        elif mesg[5] == sensor.OP_DEGREE:
+            self.window.writeln('Highest degree: {}, node {}'.format(self.degree, random.choice(self.targetlist)))
+            print(self.degree)
+        self.subtreesize.pop(wave)
+        self.targetlist = [self.sensor.pos]
+        self.degree = len(self.neighbours)
+
+    def echo_reply_send_back(self, mesg, wave):
+        self.window.writeln('({}, {}); Received from all neighbours'.format(mesg[1], mesg[2]))
+        print("{}sending payload {}  w target one of {} to {}".format(self.sensor.pos, self.degree, self.targetlist, self.parent))
+        if mesg[5] == sensor.OP_SIZE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=self.subtreesize[wave] + 1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=random.choice(self.targetlist) ,payload=self.degree)
+        else:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo_back, self.parent)
+        self.degree = len(self.neighbours)
+        self.targetlist = [self.sensor.pos]
+        self.subtreesize.pop(wave)
+
+    def route_hops(self, target, version=0):
+        self.route_strength = version
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        self.all_updates[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.ROUTE, self.echos_started, self.sensor.pos, self.sensor.pos, target=target, operation=sensor.SEND_STRENGTH)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.all_updates[(self.echos_started, self.sensor.pos)] += 1
+        if self.route_strength == 1:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        self.echos_started += 1
+        self.dest = target
+
+    def check_reachable(self):
+        check = []
+        for key in self.routes:
+            if self.dest not in self.routes[key]:
+                check.append(False)
+            else:
+                check.append(True)
+        if not any(check):
+            self.window.writeln('There is no path from {} to {}'.format(self.sensor.pos, self.dest))
+            return False
+        return True
+
+    def topology_all_send_init(self, mesg):
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if self.check_reachable():
+            paths = self.find_paths(self.sensor.pos, self.dest, self.routes)
+            if self.route_strength == 1:
+                lowest_paths_idx, lowest_strength = self.paths_with_lowest_strength(paths)
+                print(lowest_paths_idx, lowest_strength)
+                shortest_path = min(lowest_paths_idx, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops, lowest strength: {}'.format(len(shortest_path) - 2, lowest_strength))
+                self.found = True
+            else:
+                shortest_path = min(paths, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops'.format(len(shortest_path) - 2))
+                self.found = True
+            self.routes = {}
+            
+    def topology_all_send_no_init(self, mesg):
+        self.window.writeln('({}, {}); Recieved from all neighbours'.format(mesg[1], mesg[2]))
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], node, target=(n[0], n[1]), strength=self.strength_nodes[node], operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+                else:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+
+    def topology_all_send(self, mesg):
+        self.all_updates[(mesg[1], mesg[2])] -= 1
+        if mesg[2] == self.sensor.pos and self.all_updates[(mesg[1], mesg[2])] == 0 and self.found == False:
+            self.topology_all_send_init(mesg)
+        elif self.all_updates[(mesg[1], mesg[2])] == 0:
+            self.topology_all_send_no_init(mesg)
+
+    def topology_route_mult_n(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.all_updates[(mesg[1], mesg[2])] = 0
+        self.parent = sender
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            if address != self.parent:
+                echo = sensor.message_encode(sensor.ROUTE, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.all_updates[(mesg[1], mesg[2])] += 1
+
+    def topology_route_only_p(self, mesg, sender):
+        self.parent = sender
+        self.routes[self.sensor.pos] = mesg[3]
+        self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        if mesg[5] == sensor.SEND_STRENGTH:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]), operation= mesg[5], strength=self.sensor.strength)
+            self.peer.sendto(echo, self.parent)
+        else:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]))
+            self.peer.sendto(echo, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+    def topology_route_already_seen(self, mesg, sender):
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5], strength=self.sensor.strength)
+                    self.peer.sendto(echo, sender)
+                else:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]))
+                    self.peer.sendto(echo, sender)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, sender)
+        self.routes = {}
+
+
+    def topology_route(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.topology_route_mult_n(mesg, sender)
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.topology_route_only_p(mesg, sender)
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.topology_route_already_seen(mesg, sender)
+
+    def get_topology(self, mesg, sender):
+        if mesg[0] == sensor.ALL_N_SEND:
+            self.topology_all_send(mesg)
+        if mesg[0] == sensor.ROUTE:
+            self.topology_route(mesg, sender)
+        if mesg[0] == sensor.ROUTE_REPLY:
+            wave = (mesg[1], mesg[2])
+            if wave in self.echo_id:
+                if mesg[5] == sensor.SEND_STRENGTH and mesg[6] != 0:
+                    self.strength_nodes[mesg[3]] = mesg[6]
+                if mesg[3] in self.routes.keys():
+                    if mesg[4] not in self.routes[mesg[3]]:
+                            update = self.routes[mesg[3]] + [mesg[4]]
+                            self.routes[mesg[3]] = update
+                else:
+                    self.routes[mesg[3]] = [mesg[4]]
+
+    def find_paths(self, begin, target, network, path=[]):
+        path = path + [begin]
+        if begin == target:
+            return [path]
+        if begin not in network:
+            return []
+        paths = []
+        for node in network[begin]:
+            if node not in path:
+                newpaths = self.find_paths(node, target, network, path)
+                for newpath in newpaths:
+                    paths.append(newpath)
+        return paths
+
+    def paths_with_lowest_strength(self, paths):
+        lowest_strengths_from_paths = []
+        for path in paths:
+            lowest_strength_path = -1
+            for n in path:
+                if lowest_strength_path == -1:
+                    lowest_strength_path = self.strength_nodes[n]
+                elif self.strength_nodes[n] < lowest_strength_path:
+                    lowest_strength_path = self.strength_nodes[n]
+            lowest_strengths_from_paths.append(lowest_strength_path)
+        lowest_paths_idx = []
+        for value in lowest_strengths_from_paths:
+            if value == max(lowest_strengths_from_paths):
+                lowest_paths_idx.append(lowest_strengths_from_paths.index(value))
+        lowest_paths = []
+        for idx in lowest_paths_idx:
+            lowest_paths.append(paths[idx])
+        return lowest_paths, max(lowest_strengths_from_paths)
+# Program entry point.
+# You may add additional commandline arguments, but your program
+# should be able to run without specifying them
+if __name__ == '__main__':
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('--group', help='multicast group', default='224.1.1.1',
+                   type=str)
+    p.add_argument('--port', help='multicast port', default=50000, type=int)
+    p.add_argument('--pos', help='x,y sensor position', type=str)
+    p.add_argument('--strength', help='sensor strength', default=50,
+                   type=int)
+    p.add_argument(
+        '--value', help='sensor measurement value (unused this year)', type=float)
+    p.add_argument('--grid', help='size of grid', default=100, type=int)
+    p.add_argument('--period', help='period between autopings (0=off)',
+                   default=10, type=int)
+    args = p.parse_args(sys.argv[1:])
+    if args.pos:
+        pos = tuple(int(n) for n in args.pos.split(',')[:2])
+    else:
+        pos = random_position(args.grid)
+    value = args.value if args.value is not None else gauss(20, 2)
+    mcast_addr = (args.group, args.port)
+
+    w = MainWindow()
+    sensor_client = SensorClient(
+        mcast_addr, pos, args.strength, value, args.grid, args.period, w)
+    w.set_client(sensor_client)
+    sensor_client.start()
+    w.start()
+"""
+Networks and Network Security
+Lab 5 - Distributed Sensor Network
+NAME(s):
+STUDENT ID(s):
+GROUP NAME:
+
+DESCRIPTION:
+
+"""
+import sys
+import struct
+import socket
+from random import randint, gauss
+import tkinter
+import sensor
+from tkinter import TclError
+from threading import Thread
+from gui import MainWindow
+import select
+import math
+from threading import Timer
+import random
+
+total_nodes = 0
+
+# Get random position in NxN grid.
+def random_position(n):
+    x = randint(0, n)
+    y = randint(0, n)
+    return (x, y)
+
+
+class SensorClient(Thread):
+    def __init__(self, mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                 grid_size, ping_period, window):
+        """
+        mcast_addr: udp multicast (ip, port) tuple.
+        sensor_pos: (x,y) sensor position tuple.
+        sensor_strength: initial strength of the sensor ping (radius).
+        sensor_value: initial temperature measurement of the sensor.
+        grid_size: length of the  of the grid (which is always square).
+        ping_period: time in seconds between multicast pings.
+
+        Additional parameters to this method should always have a default
+        value!
+        """
+        super().__init__()
+
+        # Save any parameters which should be accessible later:
+        # TODO It's probably a good idea to either save the parameters
+        # to this method here, or create a seperate class to hold them.
+        self.window = window
+        self.strength = sensor_strength
+
+        # Listen for this socket becoming readable in your select call
+        # to allow the main thread to wake the client from being blocked on
+        # select. You should ignore the data being written to it.
+        self.wake_socket = self.window.wake_thread
+
+        # Create the multicast listener socket.
+        self.mcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                   socket.IPPROTO_UDP)
+        # Sets the socket address as reusable so you can run multiple instances
+        # of the program on the same machine at the same time.
+        self.mcast.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Subscribe the socket to multicast messages from the given address.
+        mreq = struct.pack('4sl', socket.inet_aton(mcast_addr[0]),
+                           socket.INADDR_ANY)
+        self.mcast.setsockopt(
+            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        if sys.platform == 'win32':  # windows special case
+            mcast.bind(('localhost', mcast_addr[1]))
+        else:  # should work for everything else
+            self.mcast.bind(mcast_addr)
+
+        # Create the peer-to-peer socket.
+        self.peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                  socket.IPPROTO_UDP)
+        # Set the socket multicast TTL so it can send multicast messages.
+        self.peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 5)
+        # Bind the socket to a random port.
+        if sys.platform == 'win32':  # windows special case
+            peer.bind(('localhost', socket.INADDR_ANY))
+        else:  # should work for everything else
+            self.peer.bind(('', socket.INADDR_ANY))
+
+        self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+        self.window.writeln(f'my position is (%s, %s)' % sensor_pos)
+
+        self.sensor = sensor.Sensor(mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                                    grid_size, ping_period, self.peer, self.mcast, window)
+
+        # TODO Implement additional code that should be run only once when starting
+        # the client here:
+        self.neighbours = []
+        self.echo_id = []
+        self.echos_started = 0
+        self.num_echos = {}
+        self.parent = []
+        self.subtreesize = {}
+        self.degree = len(self.neighbours)
+        self.target = self.sensor.pos
+        self.targetlist = [self.sensor.pos]
+        self.routes = {}
+        self.all_updates = {}
+        self.dest = None
+        self.found = False
+        self.route_strength = 0
+        self.strength_nodes = {}
+
+    def run(self):
+        """
+        Implement the auto ping and listening for incoming messages here.
+        """
+        try:
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+            while not self.window.quit_event.is_set():
+                r_socket = select.select(
+                    [self.peer, self.wake_socket, self.mcast], [], [])[0]
+                for sock in r_socket:
+                    if sock == self.wake_socket:
+                        print('wake')
+                    else:
+                        mesg, sender = sock.recvfrom(100)
+                        mesg = sensor.message_decode(mesg)
+                        if not sender[1] == self.sensor.peer.getsockname()[1]:
+                            if mesg[0] == sensor.MSG_PING or mesg[0] == sensor.MSG_PONG:
+                                self.handle_ping(mesg, sender)
+                            if mesg[0] == sensor.MSG_ECHO or mesg[0] == sensor.MSG_ECHO_REPLY:
+                                self.handle_echo(mesg, sender)
+                            if mesg[0] == sensor.ROUTE or mesg[0] == sensor.ROUTE_REPLY or mesg[0] == sensor.ALL_N_SEND:
+                                self.get_topology(mesg, sender)
+        except TclError:
+            pass
+
+    def get_command(self, command):
+        if command[0] == 'properties':
+            self.prop()
+        if command[0] == 'ping':
+            ping = sensor.message_encode(
+                0, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+        if command[0] == 'list':
+            self.get_neighbors()
+        if command[0] == 'move':
+            self.move(int(command[1]), int(command[2]))
+        if command[0] == 'strength':
+            self.set_strength(int(command[1]))
+        if command[0] == 'echo':
+            self.echo_wave(sensor.OP_NOOP)
+        if command[0] == 'size':
+            self.echo_wave(sensor.OP_SIZE)
+        if command[0] == 'highest_degree':
+            self.highest_degree()
+        if command[0] == 'route_hops':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])))
+        if command[0] == 'route_strength':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])), version=1)
+
+    def prop(self):
+        mesg = '({}, {});{};{};{}:{}'.format(self.sensor.pos[0], self.sensor.pos[1], self.sensor.value, self.sensor.strength, self.sensor.peer.getsockname()[0], self.sensor.peer.getsockname()[1])
+        self.window.writeln(mesg)
+
+    def get_neighbors(self):
+        self.neighbours.sort(key=lambda n: (
+            n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+        for n in self.neighbours:
+            distance = math.sqrt(
+                (n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+            self.window.writeln('({}, {});{}'.format(n[0], n[1], distance))
+
+    def text_entered(self, line):
+        """
+        Handle new input line here.
+        Do not change the name of this method!
+        This method is called each time a command is entered in
+        the GUI.
+        """
+
+        command = line.split(' ')
+        self.get_command(command)
+
+    def send_ping(self):
+        """
+        Send a ping message to the multicast address.
+        """
+        if self.sensor.ping_period > 0:
+            self.neighbours = []
+            ping = sensor.message_encode(
+                sensor.MSG_PING, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+
+    def handle_ping(self,mesg, sender):
+        if mesg[0] == sensor.MSG_PING:
+            in_range = self.calc_distance(
+                mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                pong = sensor.message_encode(sensor.MSG_PONG, 0, self.sensor.pos, mesg[2], strength=self.sensor.strength)
+                self.peer.sendto(pong, sender)
+            else:
+                for n in self.neighbours:
+                    if n[2] == sender:
+                        self.neighbours.remove(n)
+        if mesg[0] == sensor.MSG_PONG:
+            in_range = self.calc_distance(mesg[2][0], mesg[2][1], self.sensor.pos[0], self.sensor.pos[1], mesg[6])
+            if in_range:
+                if ((mesg[2][0], mesg[2][1], sender)) not in self.neighbours:
+                    self.neighbours.append(
+                        [mesg[2][0], mesg[2][1], sender])
+
+
+    def calc_distance(self, x1, y1, x2, y2, sensor_strength):
+        distance = (math.sqrt(abs((x1 - x2)**2 + (y1 - y2)**2)))
+        if sensor_strength >= distance:
+            return True
+        else:
+            return False
+
+    def set_strength(self, new_strength):
+        if new_strength >= 0:
+            self.sensor.strength = new_strength
+            print('strength set to {}'.format(self.sensor.strength))
+
+    def move(self, new_x, new_y):
+        if isinstance(new_x, int) and isinstance(new_y, int):
+            if new_x >= 0 and new_x <= self.sensor.grid_size and new_y >= 0 and new_y <= self.sensor.grid_size:
+                self.sensor.pos = (new_x, new_y)
+                self.target = self.sensor.pos
+                self.window.clear()
+                self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+                self.window.writeln(f'my position is (%s, %s)' % self.sensor.pos)
+
+    def echo_wave(self, operator):
+        """
+        Send an echo wave to all neighbors.
+        """
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=operator)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+        self.echos_started += 1
+
+    def highest_degree(self):
+        """
+        Send an echo wave to all neighbors.
+        """
+
+        if len(self.neighbours) == 0:
+            self.window.writeln('Highest degree: {}, node {}'.format(0, self.sensor.pos))
+            # print(0)
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.MSG_ECHO, self.echos_started, self.sensor.pos, self.sensor.pos, operation=sensor.OP_DEGREE)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.num_echos[(self.echos_started, self.sensor.pos)] += 1
+            #self.degree += 1
+        self.targetlist = [self.sensor.pos]
+        self.echos_started += 1
+
+    def handle_echo(self, mesg, sender):
+        if mesg[0] == sensor.MSG_ECHO:
+            self.echo_request(mesg, sender)
+            
+        elif mesg[0] == sensor.MSG_ECHO_REPLY:
+            payload = int(mesg[7])
+            wave = (mesg[1], mesg[2])
+            self.echo_reply(mesg, wave, payload)
+    
+    def echo_request(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.echo_request_new_wave(mesg, sender)
+
+        # blad, alleen een parent
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.echo_request_leaf(mesg, sender)
+
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.echo_request_general(mesg, sender)
+
+
+    def echo_request_new_wave(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.parent = sender
+        #print('parent=', self.parent)
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            #self.degree += 1
+            if address != self.parent:
+                #print('echo send further to {}'.format(address))
+                echo = sensor.message_encode(sensor.MSG_ECHO, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.num_echos[wave] += 1
+
+    def echo_request_leaf(self, mesg, sender):
+        self.parent = sender
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=1)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        #print('echo send back no neighbours to {}'.format(self.parent))
+        self.peer.sendto(echo, self.parent)
+
+    def echo_request_general(self, mesg, sender):
+        #print('echo send back to {}'.format(sender))
+        if mesg[5] == sensor.OP_SIZE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=0)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=self.sensor.pos, payload=0)
+        else:
+            echo = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos)
+        self.peer.sendto(echo, sender)
+
+    def echo_reply(self, mesg, wave, payload):
+        if wave not in self.subtreesize:
+            self.subtreesize[wave] = 0
+        if wave in self.echo_id and self.num_echos[wave] > 0:
+            self.echo_reply_general(mesg, wave, payload)
+            
+        # geval initiator
+        #print(self.num_echos[wave], self.sensor.pos)
+        if mesg[2] == self.sensor.pos and self.num_echos[wave] == 0:
+            self.echo_reply_instantiator(mesg, wave)
+
+        # alle echos ontvangen
+        elif self.num_echos[wave] == 0:
+            self.echo_reply_send_back(mesg, wave)
+            
+            
+    def echo_reply_general(self, mesg, wave, payload):
+        self.num_echos[wave] -= 1
+        if mesg[5] == sensor.OP_SIZE:
+            self.subtreesize[wave] += payload
+        if mesg[5] == sensor.OP_DEGREE and payload >= len(self.neighbours) and payload >= self.degree:
+            #print('degree', self.degree, "payload", payload)
+            self.degree = payload
+            if payload == len(self.neighbours):
+                self.targetlist.append(mesg[4])
+            else:
+                self.targetlist = [mesg[4]]
+        else:
+            self.degree = len(self.neighbours)
+            self.targetlist = [self.sensor.pos]
+        print('echo back received')
+        
+    def echo_reply_instantiator(self, mesg, wave):
+        print("target", self.targetlist, "degree", self.degree)
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if mesg[5] == sensor.OP_SIZE:
+            self.window.writeln('size={}'.format(self.subtreesize[wave] + 1))
+        elif mesg[5] == sensor.OP_DEGREE:
+            self.window.writeln('Highest degree: {}, node {}'.format(self.degree, random.choice(self.targetlist)))
+            print(self.degree)
+        self.subtreesize.pop(wave)
+        self.targetlist = [self.sensor.pos]
+        self.degree = len(self.neighbours)
+
+    def echo_reply_send_back(self, mesg, wave):
+        self.window.writeln('({}, {}); Received from all neighbours'.format(mesg[1], mesg[2]))
+        print("{}sending payload {}  w target one of {} to {}".format(self.sensor.pos, self.degree, self.targetlist, self.parent))
+        if mesg[5] == sensor.OP_SIZE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], payload=self.subtreesize[wave] + 1)
+        elif mesg[5] == sensor.OP_DEGREE:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5], target=random.choice(self.targetlist) ,payload=self.degree)
+        else:
+            echo_back = sensor.message_encode(sensor.MSG_ECHO_REPLY, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo_back, self.parent)
+        self.degree = len(self.neighbours)
+        self.targetlist = [self.sensor.pos]
+        self.subtreesize.pop(wave)
+
+    def route_hops(self, target, version=0):
+        self.route_strength = version
+        self.num_echos[(self.echos_started, self.sensor.pos)] = 0
+        self.all_updates[(self.echos_started, self.sensor.pos)] = 0
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            echo = sensor.message_encode(sensor.ROUTE, self.echos_started, self.sensor.pos, self.sensor.pos, target=target, operation=sensor.SEND_STRENGTH)
+            self.peer.sendto(echo, address)
+            self.echo_id.append((self.echos_started, self.sensor.pos))
+            self.all_updates[(self.echos_started, self.sensor.pos)] += 1
+        if self.route_strength == 1:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        self.echos_started += 1
+        self.dest = target
+
+    def check_reachable(self):
+        check = []
+        for key in self.routes:
+            if self.dest not in self.routes[key]:
+                check.append(False)
+            else:
+                check.append(True)
+        if not any(check):
+            self.window.writeln('There is no path from {} to {}'.format(self.sensor.pos, self.dest))
+            return False
+        return True
+
+    def topology_all_send_init(self, mesg):
+        self.window.writeln('The wave {} has decided'.format(mesg[1]))
+        if self.check_reachable():
+            paths = self.find_paths(self.sensor.pos, self.dest, self.routes)
+            if self.route_strength == 1:
+                lowest_paths_idx, lowest_strength = self.paths_with_lowest_strength(paths)
+                print(lowest_paths_idx, lowest_strength)
+                shortest_path = min(lowest_paths_idx, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops, lowest strength: {}'.format(len(shortest_path) - 2, lowest_strength))
+                self.found = True
+            else:
+                shortest_path = min(paths, key=len)
+                for node in shortest_path:
+                    if node != self.sensor.pos:
+                        self.window.writeln('{}. {} '.format(shortest_path.index(node), node))
+                self.window.writeln('Total distance: {} hops'.format(len(shortest_path) - 2))
+                self.found = True
+            self.routes = {}
+            
+    def topology_all_send_no_init(self, mesg):
+        self.window.writeln('({}, {}); Recieved from all neighbours'.format(mesg[1], mesg[2]))
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], node, target=(n[0], n[1]), strength=self.strength_nodes[node], operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+                else:
+                    add_node = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5])
+                    self.peer.sendto(add_node, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+
+    def topology_all_send(self, mesg):
+        self.all_updates[(mesg[1], mesg[2])] -= 1
+        if mesg[2] == self.sensor.pos and self.all_updates[(mesg[1], mesg[2])] == 0 and self.found == False:
+            self.topology_all_send_init(mesg)
+        elif self.all_updates[(mesg[1], mesg[2])] == 0:
+            self.topology_all_send_no_init(mesg)
+
+    def topology_route_mult_n(self, mesg, sender):
+        self.echo_id.append((mesg[1], mesg[2]))
+        wave = (mesg[1], mesg[2])
+        self.num_echos[wave] = 0
+        self.all_updates[(mesg[1], mesg[2])] = 0
+        self.parent = sender
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+
+        for neighbour in self.neighbours:
+            _, _, address = neighbour
+            if address != self.parent:
+                echo = sensor.message_encode(sensor.ROUTE, mesg[1], mesg[2], self.sensor.pos, operation=mesg[5])
+                self.peer.sendto(echo, address)
+                self.all_updates[(mesg[1], mesg[2])] += 1
+
+    def topology_route_only_p(self, mesg, sender):
+        self.parent = sender
+        self.routes[self.sensor.pos] = mesg[3]
+        self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        if mesg[5] == sensor.SEND_STRENGTH:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]), operation= mesg[5], strength=self.sensor.strength)
+            self.peer.sendto(echo, self.parent)
+        else:
+            echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(self.neighbours[0][0], self.neighbours[0][1]))
+            self.peer.sendto(echo, self.parent)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, self.parent)
+        self.routes = {}
+
+    def topology_route_already_seen(self, mesg, sender):
+        coord_n = []
+        for n in self.neighbours:
+            coord_n.append((n[0], n[1]))
+        self.routes[self.sensor.pos] = coord_n
+        if mesg[5] == sensor.SEND_STRENGTH:
+            self.strength_nodes[self.sensor.pos] = self.sensor.strength
+        for node in self.routes:
+            n_list = self.routes[node]
+            for n in n_list:
+                if mesg[5] == sensor.SEND_STRENGTH:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]), operation=mesg[5], strength=self.sensor.strength)
+                    self.peer.sendto(echo, sender)
+                else:
+                    echo = sensor.message_encode(sensor.ROUTE_REPLY, mesg[1], mesg[2], self.sensor.pos, target=(n[0], n[1]))
+                    self.peer.sendto(echo, sender)
+        echo = sensor.message_encode(sensor.ALL_N_SEND, mesg[1], mesg[2], self.sensor.pos , operation=mesg[5])
+        self.peer.sendto(echo, sender)
+        self.routes = {}
+
+
+    def topology_route(self, mesg, sender):
+        if (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) > 1:
+            self.topology_route_mult_n(mesg, sender)
+        elif (mesg[1], mesg[2]) not in self.echo_id and len(self.neighbours) == 1:
+            self.topology_route_only_p(mesg, sender)
+        elif (mesg[1], mesg[2]) in self.echo_id:
+            self.topology_route_already_seen(mesg, sender)
+
+    def get_topology(self, mesg, sender):
+        if mesg[0] == sensor.ALL_N_SEND:
+            self.topology_all_send(mesg)
+        if mesg[0] == sensor.ROUTE:
+            self.topology_route(mesg, sender)
+        if mesg[0] == sensor.ROUTE_REPLY:
+            wave = (mesg[1], mesg[2])
+            if wave in self.echo_id:
+                if mesg[5] == sensor.SEND_STRENGTH and mesg[6] != 0:
+                    self.strength_nodes[mesg[3]] = mesg[6]
+                if mesg[3] in self.routes.keys():
+                    if mesg[4] not in self.routes[mesg[3]]:
+                            update = self.routes[mesg[3]] + [mesg[4]]
+                            self.routes[mesg[3]] = update
+                else:
+                    self.routes[mesg[3]] = [mesg[4]]
+
+    def find_paths(self, begin, target, network, path=[]):
+        path = path + [begin]
+        if begin == target:
+            return [path]
+        if begin not in network:
+            return []
+        paths = []
+        for node in network[begin]:
+            if node not in path:
+                newpaths = self.find_paths(node, target, network, path)
+                for newpath in newpaths:
+                    paths.append(newpath)
+        return paths
+
+    def paths_with_lowest_strength(self, paths):
+        lowest_strengths_from_paths = []
+        for path in paths:
+            lowest_strength_path = -1
+            for n in path:
+                if lowest_strength_path == -1:
+                    lowest_strength_path = self.strength_nodes[n]
+                elif self.strength_nodes[n] < lowest_strength_path:
+                    lowest_strength_path = self.strength_nodes[n]
+            lowest_strengths_from_paths.append(lowest_strength_path)
+        lowest_paths_idx = []
+        for value in lowest_strengths_from_paths:
+            if value == max(lowest_strengths_from_paths):
+                lowest_paths_idx.append(lowest_strengths_from_paths.index(value))
+        lowest_paths = []
+        for idx in lowest_paths_idx:
+            lowest_paths.append(paths[idx])
+        return lowest_paths, max(lowest_strengths_from_paths)
+# Program entry point.
+# You may add additional commandline arguments, but your program
+# should be able to run without specifying them
+if __name__ == '__main__':
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument('--group', help='multicast group', default='224.1.1.1',
+                   type=str)
+    p.add_argument('--port', help='multicast port', default=50000, type=int)
+    p.add_argument('--pos', help='x,y sensor position', type=str)
+    p.add_argument('--strength', help='sensor strength', default=50,
+                   type=int)
+    p.add_argument(
+        '--value', help='sensor measurement value (unused this year)', type=float)
+    p.add_argument('--grid', help='size of grid', default=100, type=int)
+    p.add_argument('--period', help='period between autopings (0=off)',
+                   default=10, type=int)
+    args = p.parse_args(sys.argv[1:])
+    if args.pos:
+        pos = tuple(int(n) for n in args.pos.split(',')[:2])
+    else:
+        pos = random_position(args.grid)
+    value = args.value if args.value is not None else gauss(20, 2)
+    mcast_addr = (args.group, args.port)
+
+    w = MainWindow()
+    sensor_client = SensorClient(
+        mcast_addr, pos, args.strength, value, args.grid, args.period, w)
+    w.set_client(sensor_client)
+    sensor_client.start()
+    w.start()
+"""
+Networks and Network Security
+Lab 5 - Distributed Sensor Network
+NAME(s):
+STUDENT ID(s):
+GROUP NAME:
+
+DESCRIPTION:
+
+"""
+import sys
+import struct
+import socket
+from random import randint, gauss
+import tkinter
+import sensor
+from tkinter import TclError
+from threading import Thread
+from gui import MainWindow
+import select
+import math
+from threading import Timer
+import random
+
+total_nodes = 0
+
+# Get random position in NxN grid.
+def random_position(n):
+    x = randint(0, n)
+    y = randint(0, n)
+    return (x, y)
+
+
+class SensorClient(Thread):
+    def __init__(self, mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                 grid_size, ping_period, window):
+        """
+        mcast_addr: udp multicast (ip, port) tuple.
+        sensor_pos: (x,y) sensor position tuple.
+        sensor_strength: initial strength of the sensor ping (radius).
+        sensor_value: initial temperature measurement of the sensor.
+        grid_size: length of the  of the grid (which is always square).
+        ping_period: time in seconds between multicast pings.
+
+        Additional parameters to this method should always have a default
+        value!
+        """
+        super().__init__()
+
+        # Save any parameters which should be accessible later:
+        # TODO It's probably a good idea to either save the parameters
+        # to this method here, or create a seperate class to hold them.
+        self.window = window
+        self.strength = sensor_strength
+
+        # Listen for this socket becoming readable in your select call
+        # to allow the main thread to wake the client from being blocked on
+        # select. You should ignore the data being written to it.
+        self.wake_socket = self.window.wake_thread
+
+        # Create the multicast listener socket.
+        self.mcast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                   socket.IPPROTO_UDP)
+        # Sets the socket address as reusable so you can run multiple instances
+        # of the program on the same machine at the same time.
+        self.mcast.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Subscribe the socket to multicast messages from the given address.
+        mreq = struct.pack('4sl', socket.inet_aton(mcast_addr[0]),
+                           socket.INADDR_ANY)
+        self.mcast.setsockopt(
+            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        if sys.platform == 'win32':  # windows special case
+            mcast.bind(('localhost', mcast_addr[1]))
+        else:  # should work for everything else
+            self.mcast.bind(mcast_addr)
+
+        # Create the peer-to-peer socket.
+        self.peer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                  socket.IPPROTO_UDP)
+        # Set the socket multicast TTL so it can send multicast messages.
+        self.peer.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 5)
+        # Bind the socket to a random port.
+        if sys.platform == 'win32':  # windows special case
+            peer.bind(('localhost', socket.INADDR_ANY))
+        else:  # should work for everything else
+            self.peer.bind(('', socket.INADDR_ANY))
+
+        self.window.writeln('my address is %s:%s' % self.peer.getsockname())
+        self.window.writeln(f'my position is (%s, %s)' % sensor_pos)
+
+        self.sensor = sensor.Sensor(mcast_addr, sensor_pos, sensor_strength, sensor_value,
+                                    grid_size, ping_period, self.peer, self.mcast, window)
+
+        # TODO Implement additional code that should be run only once when starting
+        # the client here:
+        self.neighbours = []
+        self.echo_id = []
+        self.echos_started = 0
+        self.num_echos = {}
+        self.parent = []
+        self.subtreesize = {}
+        self.degree = len(self.neighbours)
+        self.target = self.sensor.pos
+        self.targetlist = [self.sensor.pos]
+        self.routes = {}
+        self.all_updates = {}
+        self.dest = None
+        self.found = False
+        self.route_strength = 0
+        self.strength_nodes = {}
+
+    def run(self):
+        """
+        Implement the auto ping and listening for incoming messages here.
+        """
+        try:
+            timer = Timer(self.sensor.ping_period, self.send_ping)
+            timer.start()
+            while not self.window.quit_event.is_set():
+                r_socket = select.select(
+                    [self.peer, self.wake_socket, self.mcast], [], [])[0]
+                for sock in r_socket:
+                    if sock == self.wake_socket:
+                        print('wake')
+                    else:
+                        mesg, sender = sock.recvfrom(100)
+                        mesg = sensor.message_decode(mesg)
+                        if not sender[1] == self.sensor.peer.getsockname()[1]:
+                            if mesg[0] == sensor.MSG_PING or mesg[0] == sensor.MSG_PONG:
+                                self.handle_ping(mesg, sender)
+                            if mesg[0] == sensor.MSG_ECHO or mesg[0] == sensor.MSG_ECHO_REPLY:
+                                self.handle_echo(mesg, sender)
+                            if mesg[0] == sensor.ROUTE or mesg[0] == sensor.ROUTE_REPLY or mesg[0] == sensor.ALL_N_SEND:
+                                self.get_topology(mesg, sender)
+        except TclError:
+            pass
+
+    def get_command(self, command):
+        if command[0] == 'properties':
+            self.prop()
+        if command[0] == 'ping':
+            ping = sensor.message_encode(
+                0, 0, self.sensor.pos, self.sensor.pos, strength=self.sensor.strength)
+            self.peer.sendto(ping, self.sensor.mcast_addr)
+        if command[0] == 'list':
+            self.get_neighbors()
+        if command[0] == 'move':
+            self.move(int(command[1]), int(command[2]))
+        if command[0] == 'strength':
+            self.set_strength(int(command[1]))
+        if command[0] == 'echo':
+            self.echo_wave(sensor.OP_NOOP)
+        if command[0] == 'size':
+            self.echo_wave(sensor.OP_SIZE)
+        if command[0] == 'highest_degree':
+            self.highest_degree()
+        if command[0] == 'route_hops':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])))
+        if command[0] == 'route_strength':
+            self.found = False
+            self.route_hops((int(command[1]), int(command[2])), version=1)
+
+    def prop(self):
+        mesg = '({}, {});{};{};{}:{}'.format(self.sensor.pos[0], self.sensor.pos[1], self.sensor.value, self.sensor.strength, self.sensor.peer.getsockname()[0], self.sensor.peer.getsockname()[1])
+        self.window.writeln(mesg)
+
+    def get_neighbors(self):
+        self.neighbours.sort(key=lambda n: (
+            n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+        for n in self.neighbours:
+            distance = math.sqrt(
+                (n[0] - self.sensor.pos[0])**2 + (n[1] - self.sensor.pos[1])**2)
+            self.window.writeln('({}, {});{}'.format(n[0], n[1], distance))
+
+    def text_entered(self, line):
+        """
+        Handle new input line here.
+        Do not change the name of this method!
+        This method is called each time a command is entered in
+        the GUI.
+        """
+
+        command = line.split(' ')
+        self.get_command(command)
+
+    def send_ping(self):
+        """
+
