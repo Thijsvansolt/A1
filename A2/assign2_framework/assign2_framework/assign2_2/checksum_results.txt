@@ -1,0 +1,34 @@
+100kb
+Kernel:                 0.000107 seconds.
+Memory:                 0.000182 seconds.
+CUDA checksum: 6913467
+Checksum (sequential):          0.000040 seconds.
+Sequential checksum: 6913467
+
+500kb
+Kernel:                 0.000267 seconds.
+Memory:                 0.001420 seconds.
+CUDA checksum: 39108830
+Checksum (sequential):          0.000374 seconds.
+Sequential checksum: 39108830
+
+1mb
+Kernel:                 0.000331 seconds.
+Memory:                 0.001989 seconds.
+CUDA checksum: 103789599
+Checksum (sequential):          0.000823 seconds.
+Sequential checksum: 103789599
+
+2mb
+Kernel:                 0.000436 seconds.
+Memory:                 0.004475 seconds.
+CUDA checksum: 205532370
+Checksum (sequential):          0.001852 seconds.
+Sequential checksum: 205532370
+
+10mb
+Kernel:                 0.001809 seconds.
+Memory:                 0.012189 seconds.
+CUDA checksum: 977031769
+Checksum (sequential):          0.001852 seconds.
+Sequential checksum: 977031769
