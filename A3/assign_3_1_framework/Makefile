@@ -44,3 +44,9 @@ dist:
 
 clean:
 	rm -fv $(PROGNAME) $(OBJFILES) $(TARNAME) result.txt plot.png
+
+com:
+	$(CC) assign3_3.c -o assign3_3
+
+runcom:
+	mpirun -n 6 assign3_3
