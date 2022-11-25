@@ -17,8 +17,8 @@ int MYMPI_Bcast(void *buffer, int count, MPI_Datatype datatype, int root, MPI_Co
     if (root == 0) {
         int left = mod(root - 1, size);
         int right = mod(root + 1, size);
-        MPI_Send(buffer, strlen(buffer) + 1, datatype, left, 1 , comm);
-        MPI_Send(buffer, strlen(buffer) + 1, datatype, right, 1, comm);
+        MPI_Send(buffer, count, datatype, left, 1 , comm);
+        MPI_Send(buffer, count, datatype, right, 1, comm);
     }
     else{
         MPI_Recv(buffer, strlen(buffer) + 1, datatype, mod(root - 1, size), 1, comm, MPI_STATUS_IGNORE);
