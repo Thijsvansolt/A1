@@ -18,6 +18,7 @@
 #     prun v -np 8 -8 -sge-script $PRUN_ETC/prun-openmpi ./assign3_1 $i 10000 >> 8_8_results.txt
 # done
 
+
 echo "Running 1 node with 1 processes"
 for i in 1000, 10000, 100000, 1000000, 10000000
 do
